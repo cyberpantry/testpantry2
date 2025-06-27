@@ -1,0 +1,2682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Management App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        .screen {
+            display: none; /* Hide all screens by default */
+            height: calc(100vh - 64px); /* Full height minus nav bar */
+            overflow-y: auto; /* Enable scrolling for content */
+            padding-bottom: 80px; /* Space for FAB and nav bar */
+        }
+        .screen.active {
+            display: block; /* Show active screen */
+        }
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+            max-width: 90%;
+            max-height: 90%;
+            overflow-y: auto;
+            position: relative;
+        }
+        /* Custom styles for better aesthetics */
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            padding: 1rem;
+        }
+        .btn-primary {
+            @apply bg-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors duration-200;
+        }
+        .btn-secondary {
+            @apply bg-gray-200 text-gray-800 py-2 px-4 rounded-lg font-semibold hover:bg-gray-300 transition-colors duration-200;
+        }
+        input[type="text"], input[type="number"], input[type="date"], textarea, select {
+            @apply w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500;
+        }
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            flex-direction: column;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Swipe container for inventory items */
+        .swipe-container {
+            position: relative;
+            overflow: hidden;
+            border-radius: 0.75rem; /* Match card border-radius */
+        }
+        .swipe-actions {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            pointer-events: none; /* Allow clicks to pass through to the card */
+            z-index: 0; /* Behind the actual card content */
+        }
+        .swipe-action-left, .swipe-action-right {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            flex-grow: 1;
+            height: 100%;
+            opacity: 0; /* Hidden by default */
+            transition: opacity 0.2s ease-in-out;
+        }
+        .swipe-action-left {
+            background-color: #ef4444; /* Red for Expired */
+            justify-content: flex-start;
+            padding-left: 1rem;
+        }
+        .swipe-action-right {
+            background-color: #22c55e; /* Green for Consumed */
+            justify-content: flex-end;
+            padding-right: 1rem;
+        }
+        .swipe-action-left.active, .swipe-action-right.active {
+            opacity: 1;
+        }
+
+        .swipe-card-content {
+            position: relative;
+            z-index: 1; /* Above swipe actions */
+            background-color: white; /* Ensure card content has its own background */
+            transition: transform 0.3s ease-out; /* For smooth swipe animation */
+            padding: 1rem; /* Match card padding */
+            border-radius: 0.75rem; /* Match card border-radius */
+        </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <div id="app-container" class="flex-grow p-4 pb-16">
+
+        <div id="home-screen" class="screen active">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800">FoodWise</h1>
+                <div class="flex space-x-4">
+                    <i class="fas fa-user-circle text-2xl text-gray-600"></i>
+                    <i class="fas fa-cog text-2xl text-gray-600" onclick="showScreen('settings-screen')"></i>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div class="card">
+                    <h2 class="text-xl font-semibold mb-2">Food Consumed</h2>
+                    <div class="flex justify-between items-center mb-2">
+                        <span id="consumed-period-display" class="text-sm text-gray-500">Daily</span>
+                        <select id="consumed-period-filter" class="p-1 border rounded-md text-sm" onchange="updateFoodConsumedSummary()">
+                            <option value="Daily">Daily</option>
+                            <option value="Weekly">Weekly</option>
+                            <option value="Monthly">Monthly</option>
+                        </select>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
+                        <div class="bg-green-500 h-4 rounded-full" style="width: 75%;"></div>
+                    </div>
+                    <p id="consumed-amount-display" class="text-lg font-medium text-gray-700">0 items consumed today</p>
+                </div>
+
+                <div class="card">
+                    <h2 class="text-xl font-semibold mb-2">Food Wasted & Money Lost</h2>
+                    <p class="text-3xl font-bold text-red-600 mb-1">$23.50 lost</p>
+                    <p class="text-lg text-gray-700">7 items wasted</p>
+                </div>
+            </div>
+
+            <div class="card mb-6">
+                <h2 class="text-xl font-semibold mb-4">Expiring Soon</h2>
+                <div class="overflow-x-auto flex space-x-4 pb-2">
+                    <div class="flex-shrink-0 w-48 p-3 bg-yellow-100 rounded-lg border border-yellow-300">
+                        <p class="font-semibold">Milk</p>
+                        <p class="text-sm text-gray-600">1 gallon</p>
+                        <p class="text-sm text-red-500">Expires in 2 days</p>
+                    </div>
+                    <div class="flex-shrink-0 w-48 p-3 bg-yellow-100 rounded-lg border border-yellow-300">
+                        <p class="font-semibold">Spinach</p>
+                        <p class="text-sm text-gray-600">1 bag</p>
+                        <p class="text-sm text-red-500">Expires tomorrow</p>
+                    </div>
+                    <div class="flex-shrink-0 w-48 p-3 bg-yellow-100 rounded-lg border border-yellow-300">
+                        <p class="font-semibold">Chicken Breast</p>
+                        <p class="text-sm text-gray-600">1 lb</p>
+                        <p class="text-sm text-red-500">Expires in 3 days</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-6">
+                <h2 class="text-xl font-semibold mb-4">Smart Suggestions: Cook This Today</h2>
+                <div class="flex items-center space-x-4">
+                    <img src="https://placehold.co/100x100/A7F3D0/065F46?text=Recipe" alt="Recipe Image" class="w-24 h-24 rounded-lg object-cover">
+                    <div>
+                        <h3 class="text-lg font-semibold">Chicken & Vegetable Stir-fry</h3>
+                        <p class="text-sm text-gray-600 mb-2">Uses expiring chicken and bell peppers.</p>
+                        <button class="btn-secondary" onclick="openModal('recipe-details-screen', 'chicken-stir-fry')">View Recipe</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-6">
+                <h2 class="text-xl font-semibold mb-4">Notifications & Reminders</h2>
+                <ul class="space-y-2">
+                    <li class="text-gray-700"><i class="fas fa-bell text-blue-500 mr-2"></i>Milk expires in 2 days!</li>
+                    <li class="text-gray-700"><i class="fas fa-bell text-blue-500 mr-2"></i>You wasted 3 items last week.</li>
+                </ul>
+                <button class="btn-secondary mt-4">View All Notifications</button>
+            </div>
+
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4">Quick Actions</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button class="btn-primary py-3" onclick="openModal('fab-menu-modal')">Add Food</button>
+                    <button class="btn-secondary py-3" onclick="showScreen('waste-impact-screen')">View Waste Insights</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="inventory-screen" class="screen">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800">Inventory</h1>
+                <div class="flex space-x-4">
+                    <i class="fas fa-search text-2xl text-gray-600" onclick="openModal('filter-modal')"></i>
+                    <button id="filter-favorite-inventory-btn" class="text-gray-600 hover:text-red-500" onclick="toggleFavoriteInventoryFilter()">
+                        <i class="far fa-heart text-2xl"></i>
+                    </button>
+                    <i class="fas fa-filter text-2xl text-gray-600" onclick="openModal('filter-modal')"></i>
+                </div>
+            </div>
+
+            <div id="inventory-list" class="space-y-6">
+                </div>
+        </div>
+
+        <div id="recipes-screen" class="screen">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800">Recipes</h1>
+                <div class="flex space-x-4">
+                    <i class="fas fa-search text-2xl text-gray-600" onclick="openModal('filter-modal')"></i>
+                    <button id="filter-favorite-recipes-btn" class="text-gray-600 hover:text-red-500" onclick="toggleFavoriteRecipesFilter()">
+                        <i class="far fa-heart text-2xl"></i>
+                    </button>
+                    <i class="fas fa-filter text-2xl text-gray-600" onclick="openModal('filter-modal')"></i>
+                </div>
+            </div>
+
+            <div class="card mb-6 p-4">
+                <h2 class="text-xl font-semibold mb-3">Filter Recipes</h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Availability:</label>
+                        <select id="recipe-availability-filter" class="w-full p-2 border rounded-md" onchange="applyRecipeFilters()">
+                            <option value="all">All recipes</option>
+                            <option value="can-cook">Can cook now (all ingredients in inventory)</option>
+                            <option value="missing">Missing ingredients</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Cuisine:</label>
+                        <select id="recipe-cuisine-filter" class="w-full p-2 border rounded-md" onchange="applyRecipeFilters()">
+                            <option value="All">All</option>
+                            <option value="Italian">Italian</option>
+                            <option value="Caribbean">Caribbean</option>
+                            <option value="Asian">Asian</option>
+                            <option value="Indian">Indian</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="African">African</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="recipe-expiring-filter" class="h-4 w-4 text-blue-600 rounded mr-2" onchange="applyRecipeFilters()">
+                        <label for="recipe-expiring-filter" class="text-sm font-medium text-gray-700">Prioritize Expiring Soon</label>
+                    </div>
+                </div>
+            </div>
+
+            <div id="recipe-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                </div>
+
+            <button class="btn-primary mt-6 w-full py-3" onclick="generateRecipesWithLLM()">Generate New Recipe Suggestions</button>
+            <button class="btn-secondary mt-4 w-full" onclick="showScreen('recipe-favorites-screen')">View My Favorites</button>
+        </div>
+
+        <div id="waste-impact-screen" class="screen">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800">Waste & Impact</h1>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div class="card">
+                    <h2 class="text-xl font-semibold mb-2">Total Items Wasted</h2>
+                    <p class="text-3xl font-bold text-red-600 mb-1">27 items</p>
+                    <div class="flex justify-between items-center text-sm text-gray-500">
+                        <span>This Month</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" value="" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            <span class="ml-3 text-sm font-medium text-gray-900">Overall</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2 class="text-xl font-semibold mb-2">Money Saved</h2>
+                    <p class="text-3xl font-bold text-green-600 mb-1">$50.00 saved</p>
+                    <p class="text-lg text-gray-700">This month</p>
+                </div>
+            </div>
+
+            <div class="card mb-6">
+                <h2 class="text-xl font-semibold mb-4">Reasons for Waste</h2>
+                <div class="bg-gray-100 h-48 flex items-center justify-center rounded-lg text-gray-500">
+                    [Pie Chart Placeholder]
+                    <ul class="text-sm ml-4">
+                        <li>Spoilage (40%)</li>
+                        <li>Forgot (30%)</li>
+                        <li>Overbuying (20%)</li>
+                        <li>Didn't like (10%)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mb-6">
+                <h2 class="text-xl font-semibold mb-4">Waste Timeline & Trends</h2>
+                <div class="bg-gray-100 h-48 flex items-center justify-center rounded-lg text-gray-500">
+                    [Line Graph Placeholder]
+                </div>
+            </div>
+
+            <div class="card mb-6">
+                <h2 class="text-xl font-semibold mb-4">Behavioral Insights</h2>
+                <p class="text-green-700 font-medium mb-2">Great job! You've reduced waste by 15% this quarter.</p>
+                <ul class="list-disc list-inside space-y-1 text-gray-700">
+                    <li>Check expiration dates twice a week.</li>
+                    <li>Plan meals around expiring items.</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4">Gamification & Rewards</h2>
+                <div class="flex flex-wrap gap-4 mb-4">
+                    <div class="flex flex-col items-center">
+                        <i class="fas fa-trophy text-4xl text-yellow-500"></i>
+                        <p class="text-sm text-gray-700 mt-1">Zero Waste Week</p>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <i class="fas fa-star text-4xl text-blue-500"></i>
+                        <p class="text-sm text-gray-700 mt-1">50% Improvement</p>
+                    </div>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-sm text-gray-700 mb-1">Saved $100</p>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div class="bg-green-500 h-2.5 rounded-full" style="width: 80%;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-700 mb-1">Reduced 20 items wasted</p>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div class="bg-blue-500 h-2.5 rounded-full" style="width: 60%;"></div>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn-secondary mt-4 w-full">View Leaderboard</button>
+            </div>
+        </div>
+
+        <div id="shopping-list-screen" class="screen">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800">Shopping List</h1>
+            </div>
+
+            <div class="card mb-6">
+                <h2 class="text-xl font-semibold mb-3">Add Item Manually</h2>
+                <div class="flex space-x-2">
+                    <input type="text" id="manual-shopping-item" placeholder="e.g., Milk, 1 gallon" class="flex-grow">
+                    <button class="btn-primary" onclick="addManualShoppingItem()"><i class="fas fa-plus"></i> Add</button>
+                </div>
+            </div>
+
+            <div class="card mb-6">
+                <h2 class="text-xl font-semibold mb-3">Auto-add Missing Ingredients</h2>
+                <p class="text-sm text-gray-600 mb-4">Automatically add ingredients you're missing for sample recipes.</p>
+                <button class="btn-primary w-full py-3" onclick="addMissingIngredientsToShoppingList()">
+                    <i class="fas fa-magic mr-2"></i> Add Missing from Recipes
+                </button>
+            </div>
+
+            <div class="card mb-6">
+                <h2 class="text-xl font-semibold mb-3">Add from Receipt Scanner</h2>
+                <p class="text-sm text-gray-600 mb-4">Upload a photo of your grocery receipt to quickly add items.</p>
+                <button class="btn-primary w-full py-3" onclick="openModal('receipt-scanner-screen')">
+                    <i class="fas fa-receipt mr-2"></i> Scan Receipt
+                </button>
+            </div>
+
+            <div id="shopping-list-items" class="space-y-4 mb-6">
+                </div>
+        </div>
+
+        <div id="settings-screen" class="screen">
+            <div class="flex justify-between items-center mb-6">
+                <button class="text-gray-600" onclick="showScreen('home-screen')">
+                    <i class="fas fa-arrow-left text-2xl"></i>
+                </button>
+                <h1 class="text-3xl font-bold text-gray-800">Settings</h1>
+                <div></div> </div>
+
+            <div class="space-y-4">
+                <div class="card">
+                    <h2 class="text-xl font-semibold mb-3">Notification Preferences</h2>
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center">
+                            <label class="text-gray-700">Expiration Reminders</label>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" value="" class="sr-only peer" checked>
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <label class="text-gray-700">Waste Summaries</label>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" value="" class="sr-only peer" checked>
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <label class="text-gray-700">Recipe Suggestions</label>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" value="" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+                        <div class="mt-3">
+                            <label for="notification-frequency" class="block text-sm font-medium text-gray-700 mb-1">Notification Frequency</label>
+                            <select id="notification-frequency" class="w-full p-2 border border-gray-300 rounded-md">
+                                <option>Daily</option>
+                                <option>Weekly</option>
+                                <option>Bi-weekly</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2 class="text-xl font-semibold mb-3">Dietary & LLM Preferences</h2>
+                    <h3 class="text-lg font-medium mb-2">Dietary Restrictions</h3>
+                    <div class="space-y-2 mb-4">
+                        <label class="flex items-center">
+                            <input type="checkbox" class="h-4 w-4 rounded-md text-blue-600 mr-2"> Vegetarian
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" class="h-4 w-4 rounded-md text-blue-600 mr-2"> Vegan
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" class="h-4 w-4 rounded-md text-blue-600 mr-2"> Gluten-Free
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" class="h-4 w-4 rounded-md text-blue-600 mr-2"> Other:
+                            <input type="text" class="ml-2 p-1 border rounded-md text-sm w-full">
+                        </label>
+                    </div>
+                    <h3 class="text-lg font-medium mb-2">Recipe Style Preferences</h3>
+                    <select id="recipe-style-preference" class="w-full p-2 border border-gray-300 rounded-md">
+                        <option>Simple</option>
+                        <option>Gourmet</option>
+                        <option>Quick Meals</option>
+                        <option>Healthy</option>
+                    </select>
+                </div>
+
+                <div class="card">
+                    <button class="w-full text-left text-xl font-semibold text-blue-600 hover:underline">Storage & Usage Tips</button>
+                </div>
+
+                <div class="card">
+                    <h2 class="text-xl font-semibold mb-3">Data Export</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <button class="btn-secondary">Export Inventory (CSV)</button>
+                        <button class="btn-secondary">Export Waste Data (PDF)</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <ul class="space-y-2">
+                        <li><a href="#" class="text-blue-600 hover:underline">About Us</a></li>
+                        <li><a href="#" class="text-blue-600 hover:underline">Privacy Policy</a></li>
+                        <li><a href="#" class="text-blue-600 hover:underline">Terms of Service</a></li>
+                    </ul>
+                </div>
+
+                <button class="btn-secondary w-full py-3 text-red-600 font-semibold">Sign Out</button>
+            </div>
+        </div>
+
+        <div id="fab-menu-modal" class="modal-overlay">
+            <div class="modal-content text-center">
+                <button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800" onclick="closeModal('fab-menu-modal')">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-6">Add Food</h2>
+                <div class="space-y-4">
+                    <button class="btn-primary w-full py-3" onclick="openModal('add-food-manual-screen');">Manual Entry</button>
+                    <button class="btn-secondary w-full py-3" onclick="openModal('receipt-scanner-screen');">Scan Receipt</button>
+                    <button class="btn-secondary w-full py-3" onclick="openModal('takeout-entry-screen');">Add Takeout</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="add-food-manual-screen" class="modal-overlay">
+            <div class="modal-content w-full md:w-1/2 lg:w-1/3">
+                <button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800" onclick="closeModal('add-food-manual-screen')">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-6 text-center">Add Food Item</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="food-name" class="block text-sm font-medium text-gray-700 mb-1">Food Name</label>
+                        <input type="text" id="food-name" placeholder="e.g., Apples (start typing for suggestions)">
+                    </div>
+                    <div>
+                        <label for="category" class="block text-sm font-medium text-gray-700 mb-1">Food Category</label>
+                        <select id="category">
+                            <option value="">Select Category</option>
+                            <option>Produce</option>
+                            <option>Dairy</option>
+                            <option>Meat</option>
+                            <option>Seafood</option>
+                            <option>Grains & Pasta</option>
+                            <option>Canned Goods</option>
+                            <option>Frozen Foods</option>
+                            <option>Snacks</option>
+                            <option>Beverages</option>
+                            <option>Baking Supplies</option>
+                            <option>Spices & Seasonings</option>
+                            <option>Condiments & Sauces</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+                    <div class="flex space-x-4">
+                        <div class="flex-1">
+                            <label for="quantity" class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                            <input type="number" id="quantity" value="1" min="1">
+                        </div>
+                        <div class="flex-1">
+                            <label for="unit" class="block text-sm font-medium text-gray-700 mb-1">Unit (US Metric)</label>
+                            <select id="unit">
+                                <option>pcs</option>
+                                <option>ea</option>
+                                <option>bag</option>
+                                <option>box</option>
+                                <option>can</option>
+                                <option>bottle</option>
+                                <option>pack</option>
+                                <option>bunch</option>
+                                <option>head</option>
+                                <option>lbs</option>
+                                <option>oz</option>
+                                <option>g</option>
+                                <option>kg</option>
+                                <option>fl oz</option>
+                                <option>cup</option>
+                                <option>pint</option>
+                                <option>quart</option>
+                                <option>gal</option>
+                                <option>ml</option>
+                                <option>L</option>
+                                <option>tsp</option>
+                                <option>tbsp</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="expiration-date" class="block text-sm font-medium text-gray-700 mb-1">Expiration Date</label>
+                        <input type="date" id="expiration-date">
+                    </div>
+                    <div>
+                        <label for="purchase-date" class="block text-sm font-medium text-gray-700 mb-1">Purchase Date (Optional)</label>
+                        <input type="date" id="purchase-date">
+                    </div>
+                    <div>
+                        <label for="storage-location" class="block text-sm font-medium text-gray-700 mb-1">How it's Stored</label>
+                        <select id="storage-location">
+                            <option>Fridge</option>
+                            <option>Pantry</option>
+                            <option>Freezer</option>
+                            <option>Countertop</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="notes" class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                        <textarea id="notes" rows="3" placeholder="Any additional notes..."></textarea>
+                    </div>
+                    <button class="btn-primary w-full py-3 mt-6" onclick="addItemToInventory(); closeModal('add-food-manual-screen')">Add Item to Inventory</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="takeout-entry-screen" class="modal-overlay">
+            <div class="modal-content w-full md:w-1/2 lg:w-1/3">
+                <button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800" onclick="closeModal('takeout-entry-screen')">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-6 text-center">Add Takeout Meal</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="dish-name" class="block text-sm font-medium text-gray-700 mb-1">Dish Name</label>
+                        <input type="text" id="dish-name" placeholder="e.g., Chicken Curry, Sushi Roll">
+                    </div>
+                    <div>
+                        <label for="cuisine-type" class="block text-sm font-medium text-gray-700 mb-1">Cuisine Type</label>
+                        <select id="cuisine-type" onchange="suggestBestBeforeDate()" onkeyup="suggestBestBeforeDate()">
+                            <option value="">Select Cuisine</option>
+                            <option>Chinese</option>
+                            <option>Indian</option>
+                            <option>Italian</option>
+                            <option>Japanese</option>
+                            <option>Korean</option>
+                            <option>Mexican</option>
+                            <option>Thai</option>
+                            <option>Vietnamese</option>
+                            <option>American</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="takeout-storage-location" class="block text-sm font-medium text-gray-700 mb-1">Storage Location</label>
+                        <select id="takeout-storage-location">
+                            <option>Fridge</option>
+                            <option>Freezer</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="takeout-date-added" class="block text-sm font-medium text-gray-700 mb-1">Date Added</label>
+                        <input type="date" id="takeout-date-added">
+                    </div>
+                    <div id="best-before-suggestion" class="p-3 bg-blue-50 text-blue-800 rounded-md text-sm hidden">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        Best eaten within <span id="suggested-days" class="font-semibold"></span> days.
+                    </div>
+                    <button class="btn-primary w-full py-3 mt-6" onclick="addTakeoutToInventory(); closeModal('takeout-entry-screen')">Add Takeout to Inventory</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="receipt-scanner-screen" class="modal-overlay">
+            <div class="modal-content w-full md:w-2/3 lg:w-1/2">
+                <button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800" onclick="closeModal('receipt-scanner-screen')">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-6 text-center">Scan Grocery Receipt</h2>
+                <div class="bg-gray-200 h-64 flex items-center justify-center rounded-lg mb-6 text-gray-500 text-center relative overflow-hidden">
+                    <input type="file" id="receipt-image-input" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onchange="previewReceiptImage(event)">
+                    <img id="receipt-preview" src="" alt="Receipt Preview" class="absolute inset-0 w-full h-full object-contain hidden">
+                    <span id="receipt-placeholder-text">Tap to upload image or take photo</span>
+                </div>
+                <button class="btn-primary w-full py-3" onclick="processReceiptImage()">Process Receipt</button>
+                <button class="btn-secondary w-full py-3 mt-2" onclick="usePlaceholderReceipt()">Use Placeholder Receipt</button>
+            </div>
+        </div>
+
+        <div id="review-scanned-items-modal" class="modal-overlay">
+            <div class="modal-content w-full md:w-2/3 lg:w-1/2">
+                <button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800" onclick="closeModal('review-scanned-items-modal')">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-6 text-center">Review Scanned Items</h2>
+                <div id="scanned-items-list" class="space-y-4 mb-6">
+                    </div>
+                <button class="btn-primary w-full py-3" onclick="addScannedItemsToInventory(); closeModal('review-scanned-items-modal')">Confirm & Add to Inventory</button>
+            </div>
+        </div>
+
+        <div id="mark-outcome-modal" class="modal-overlay">
+            <div class="modal-content w-full md:w-1/2 lg:w-1/3">
+                <button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800" onclick="closeModal('mark-outcome-modal')">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-6 text-center">Mark Outcome for <span id="outcome-food-name" class="text-blue-600"></span></h2>
+                <div class="space-y-4">
+                    <label class="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                        <input type="radio" name="outcome" value="ate" class="h-5 w-5 text-green-600 mr-3">
+                        <span class="text-lg font-medium">Ate it <i class="fas fa-check-circle text-green-500 ml-2"></i></span>
+                    </label>
+                    <label class="flex flex-col p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                        <div class="flex items-center mb-2">
+                            <input type="radio" name="outcome" value="tossed" class="h-5 w-5 text-red-600 mr-3" onchange="toggleReasonDropdown(this.value)">
+                            <span class="text-lg font-medium">Tossed it <i class="fas fa-times-circle text-red-500 ml-2"></i></span>
+                        </div>
+                        <div id="reason-dropdown-container" class="ml-8 mt-2 hidden">
+                            <label for="toss-reason" class="block text-sm font-medium text-gray-700 mb-1">Reason for waste:</label>
+                            <select id="toss-reason" class="w-full p-2 border border-gray-300 rounded-md">
+                                <option>Spoilage</option>
+                                <option>Forgot</option>
+                                <option>Overbought</option>
+                                <option>Didn't like</option>
+                                <option>Other</option>
+                            </select>
+                        </div>
+                    </label>
+                    <label class="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                        <input type="radio" name="outcome" value="still" class="h-5 w-5 text-yellow-600 mr-3" onchange="toggleReasonDropdown(this.value)">
+                        <span class="text-lg font-medium">Still in fridge <i class="fas fa-circle text-yellow-500 ml-2"></i></span>
+                    </label>
+                </div>
+                <button class="btn-primary w-full py-3 mt-6" onclick="handleOutcome(); closeModal('mark-outcome-modal')">Confirm</button>
+            </div>
+        </div>
+
+        <div id="update-portion-modal" class="modal-overlay">
+            <div class="modal-content w-full md:w-1/2 lg:w-1/3">
+                <button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800" onclick="closeModal('update-portion-modal')">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-6 text-center">Update Portion for <span id="portion-food-name" class="text-blue-600"></span></h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="current-quantity" class="block text-sm font-medium text-gray-700 mb-1">Current Quantity:</label>
+                        <p id="current-quantity-display" class="text-lg font-semibold text-gray-800"></p>
+                    </div>
+                    <div>
+                        <label for="portion-type" class="block text-sm font-medium text-gray-700 mb-1">Update Type:</label>
+                        <select id="portion-type" class="w-full p-2 border rounded-md" onchange="togglePortionInput()">
+                            <option value="fraction">Fraction Used (e.g., 1/2)</option>
+                            <option value="new-quantity">Set New Quantity</option>
+                        </select>
+                    </div>
+                    <div id="fraction-input-group">
+                        <label for="portion-fraction" class="block text-sm font-medium text-gray-700 mb-1">Portion Used:</label>
+                        <select id="portion-fraction" class="w-full p-2 border rounded-md">
+                            <option value="0.25">1/4 Used</option>
+                            <option value="0.5">1/2 Used</option>
+                            <option value="0.75">3/4 Used</option>
+                            <option value="1">All Used (Remove)</option>
+                        </select>
+                    </div>
+                    <div id="new-quantity-input-group" class="hidden">
+                        <label for="new-quantity" class="block text-sm font-medium text-gray-700 mb-1">New Quantity:</label>
+                        <input type="number" id="new-quantity" min="0" step="0.1">
+                        <span id="new-quantity-unit" class="text-sm text-gray-600 ml-2"></span>
+                    </div>
+                </div>
+                <button class="btn-primary w-full py-3 mt-6" onclick="updatePortion(); closeModal('update-portion-modal')">Confirm Update</button>
+            </div>
+        </div>
+
+        <div id="recipe-details-screen" class="modal-overlay">
+            <div class="modal-content w-full md:w-3/4 lg:w-2/3">
+                <button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800" onclick="closeModal('recipe-details-screen')">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <button id="recipe-detail-favorite-btn" class="absolute top-3 right-12 text-gray-400 hover:text-red-500" onclick="toggleFavoriteFromDetails()">
+                    <i class="fas fa-heart text-2xl"></i>
+                </button>
+                <h2 id="recipe-detail-name" class="text-3xl font-bold mb-4 text-center"></h2>
+                <img id="recipe-detail-image" src="" alt="Recipe Image" class="w-full h-64 object-cover rounded-lg mb-4">
+                <div class="flex justify-around text-center text-gray-700 mb-6">
+                    <div><i class="fas fa-clock mr-1"></i> <span id="recipe-detail-time"></span></div>
+                    <div><i class="fas fa-utensils mr-1"></i> <span id="recipe-detail-cuisine"></span></div>
+                    <div><i class="fas fa-tags mr-1"></i> <span id="recipe-detail-dietary"></span></div>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-2xl font-semibold mb-3">Ingredients</h3>
+                    <ul id="recipe-detail-ingredients" class="space-y-2">
+                        </ul>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-2xl font-semibold mb-3">Instructions</h3>
+                    <ol id="recipe-detail-instructions" class="list-decimal list-inside space-y-2 text-gray-700">
+                        </ol>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                    <button class="btn-primary py-3" onclick="addMissingToShoppingListFromDetails(); closeModal('recipe-details-screen')">Add missing ingredients to shopping list</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="recipe-favorites-screen" class="modal-overlay">
+            <div class="modal-content w-full md:w-3/4 lg:w-2/3">
+                <button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800" onclick="closeModal('recipe-favorites-screen')">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-6 text-center">My Favorite Recipes</h2>
+                <div id="favorite-recipe-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    </div>
+                <p id="no-favorites-message" class="text-center text-gray-500 mt-8 hidden">No favorite recipes yet. Save some from the Recipes tab!</p>
+            </div>
+        </div>
+
+        <div id="filter-modal" class="modal-overlay">
+            <div class="modal-content w-full md:w-1/2 lg:w-1/3">
+                <button class="absolute top-3 right-3 text-gray-500 hover:text-gray-800" onclick="closeModal('filter-modal')">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-6 text-center">Filters</h2>
+
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold mb-3">Filter by Category (Inventory)</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="flex items-center"><input type="checkbox" class="h-4 w-4 text-blue-600 mr-2"> Produce</label>
+                        <label class="flex items-center"><input type="checkbox" class="h-4 w-4 text-blue-600 mr-2"> Dairy</label>
+                        <label class="flex items-center"><input type="checkbox" class="h-4 w-4 text-blue-600 mr-2"> Meat</label>
+                        <label class="flex items-center"><input type="checkbox" class="h-4 w-4 text-blue-600 mr-2"> Spices</label>
+                        <label class="flex items-center"><input type="checkbox" class="h-4 w-4 text-blue-600 mr-2"> Other</label>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold mb-3">Filter by Expiration (Inventory)</h3>
+                    <select class="w-full p-2 border rounded-md">
+                        <option>Next 7 days</option>
+                        <option>Next 30 days</option>
+                        <option>Custom Date</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <button class="btn-primary" onclick="alert('Filters applied (simulated)!'); closeModal('filter-modal')">Apply Filters</button>
+                    <button class="btn-secondary" onclick="alert('Filters cleared (simulated)!'); closeModal('filter-modal')">Clear Filters</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <button id="fab" class="fixed bottom-20 right-6 bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-blue-700 transition-colors duration-200 z-50" onclick="openModal('fab-menu-modal')">
+        <i class="fas fa-plus text-2xl"></i>
+    </button>
+
+    <nav class="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 flex justify-around items-center h-16 shadow-lg z-50">
+        <button class="nav-item flex flex-col items-center text-blue-600" onclick="showScreen('home-screen')">
+            <i class="fas fa-home text-xl"></i>
+            <span class="text-xs mt-1">Home</span>
+        </button>
+        <button class="nav-item flex flex-col items-center text-gray-500 hover:text-blue-600" onclick="showScreen('inventory-screen')">
+            <i class="fas fa-boxes text-xl"></i>
+            <span class="text-xs mt-1">Inventory</span>
+        </button>
+        <button class="nav-item flex flex-col items-center text-gray-500 hover:text-blue-600" onclick="showScreen('recipes-screen')">
+            <i class="fas fa-book-open text-xl"></i>
+            <span class="text-xs mt-1">Recipes</span>
+        </button>
+        <button class="nav-item flex flex-col items-center text-gray-500 hover:text-blue-600" onclick="showScreen('waste-impact-screen')">
+            <i class="fas fa-chart-pie text-xl"></i>
+            <span class="text-xs mt-1">Waste & Impact</span>
+        </button>
+        <button class="nav-item flex flex-col items-center text-gray-500 hover:text-blue-600" onclick="showScreen('shopping-list-screen')">
+            <i class="fas fa-shopping-cart text-xl"></i>
+            <span class="text-xs mt-1">Shopping List</span>
+        </button>
+    </nav>
+
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p class="mt-4 text-gray-700 font-medium" id="loading-message">Processing image...</p>
+    </div>
+
+    <script>
+        let currentScreenId = 'home-screen'; // Tracks the currently active main screen
+        let previousScreenId = null; // Stores the screen ID before a modal was opened
+
+        let inventoryItems = [];
+        let consumedItems = []; // New array to store consumed food items
+        let generatedRecipes = [];
+        let favoriteRecipes = [];
+        let favoriteInventoryItems = [];
+        let shoppingListItems = [];
+
+        // Filter states
+        let showOnlyFavoriteInventory = false;
+        let showOnlyFavoriteRecipes = false;
+
+        // Variables for gesture handling
+        let touchstartX = 0;
+        let touchendX = 0;
+        let touchstartY = 0;
+        let touchendY = 0;
+        let longPressTimer;
+        const SWIPE_THRESHOLD = 50; // Minimum pixels for a swipe
+        const LONG_PRESS_DURATION = 700; // Milliseconds for a long press
+
+        // --- Initial Data ---
+        const initialInventory = [
+            { id: 'item1', name: 'Apples', quantity: 5, unit: 'pcs', expirationDate: '2025-06-07', category: 'Produce', storageLocation: 'crisper drawer' },
+            { id: 'item2', name: 'Broccoli', quantity: 1, unit: 'head', expirationDate: '2025-06-02', category: 'Produce', storageLocation: 'fridge' },
+            { id: 'item3', name: 'Milk', quantity: 1, unit: 'gal', expirationDate: '2025-06-01', category: 'Dairy', storageLocation: 'back of fridge' },
+            { id: 'item4', name: 'Chicken Breast', quantity: 1, unit: 'lb', expirationDate: '2025-06-03', category: 'Meat', storageLocation: 'fridge' },
+            { id: 'item5', name: 'Spinach', quantity: 1, unit: 'bag', expirationDate: '2025-05-31', category: 'Produce', storageLocation: 'fridge' },
+            { id: 'item6', name: 'Pasta', quantity: 1, unit: 'box', expirationDate: '2026-10-15', category: 'Grains & Pasta', storageLocation: 'pantry' },
+            { id: 'item7', name: 'Canned Tomatoes', quantity: 2, unit: 'can', expirationDate: '2027-03-20', category: 'Canned Goods', storageLocation: 'pantry' }
+        ];
+
+        // Sample Inventory and Recipes for auto-add feature (hardcoded for this standalone app)
+        const sampleInventoryForShoppingList = [
+            { id: 'inv1', name: 'Milk', quantity: 1, unit: 'gal', expirationDate: '2025-06-05' },
+            { id: 'inv2', name: 'Eggs', quantity: 12, unit: 'pcs', expirationDate: '2025-06-10' },
+            { id: 'inv3', name: 'Chicken Breast', quantity: 2, unit: 'lb', expirationDate: '2025-06-03' },
+            { id: 'inv4', name: 'Flour', quantity: 5, unit: 'lb', expirationDate: '2026-12-31' },
+            { id: 'inv5', name: 'Sugar', quantity: 2, unit: 'lb', expirationDate: '2027-01-15' },
+            { id: 'inv6', name: 'Tomatoes', quantity: 3, unit: 'pcs', expirationDate: '2025-06-01' }
+        ];
+
+        const sampleRecipesForShoppingList = [
+            {
+                id: 'rec1',
+                name: 'Chicken Curry',
+                ingredients: [
+                    { name: 'Chicken Breast', quantity: '1', unit: 'lb' },
+                    { name: 'Coconut Milk', quantity: '1', unit: 'can' },
+                    { name: 'Curry Powder', quantity: '2', unit: 'tbsp' },
+                    { name: 'Onion', quantity: '1', unit: 'pcs' },
+                    { name: 'Rice', quantity: '2', unit: 'cup' }
+                ]
+            },
+            {
+                id: 'rec2',
+                name: 'Pancakes',
+                ingredients: [
+                    { name: 'Flour', quantity: '1', unit: 'cup' },
+                    { name: 'Milk', quantity: '1', unit: 'cup' },
+                    { name: 'Eggs', quantity: '2', unit: 'pcs' },
+                    { name: 'Baking Powder', quantity: '1', unit: 'tsp' },
+                    { name: 'Maple Syrup', quantity: '1', unit: 'bottle' }
+                ]
+            },
+            {
+                id: 'rec3',
+                name: 'Tomato Soup',
+                ingredients: [
+                    { name: 'Tomatoes', quantity: '4', unit: 'pcs' },
+                    { name: 'Vegetable Broth', quantity: '4', unit: 'cup' },
+                    { name: 'Basil', quantity: '0.5', unit: 'cup' },
+                    { name: 'Garlic', quantity: '2', unit: 'cloves' }
+                ]
+            }
+        ];
+
+        // --- Utility Functions ---
+
+        function getDaysUntilExpiration(expirationDate) {
+            if (!expirationDate) return Infinity; // No expiration date means it won't expire
+            const today = new Date();
+            const expDate = new Date(expirationDate);
+            // Set both dates to start of day to avoid time component issues
+            today.setHours(0, 0, 0, 0);
+            expDate.setHours(0, 0, 0, 0);
+            const diffTime = expDate.getTime() - today.getTime();
+            return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        }
+
+        function formatDate(date) {
+            const d = new Date(date);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // --- Local Storage Management ---
+        function saveFavoritesToLocalStorage() {
+            localStorage.setItem('favoriteRecipes', JSON.stringify(favoriteRecipes));
+            localStorage.setItem('favoriteInventoryItems', JSON.stringify(favoriteInventoryItems));
+        }
+
+        function loadFavoritesFromLocalStorage() {
+            const storedRecipes = localStorage.getItem('favoriteRecipes');
+            const storedInventory = localStorage.getItem('favoriteInventoryItems');
+            if (storedRecipes) {
+                favoriteRecipes = JSON.parse(storedRecipes);
+            }
+            if (storedInventory) {
+                favoriteInventoryItems = JSON.parse(storedInventory);
+            }
+        }
+
+        function saveConsumedItemsToLocalStorage() {
+            localStorage.setItem('consumedItems', JSON.stringify(consumedItems));
+        }
+
+        function loadConsumedItemsFromLocalStorage() {
+            const storedConsumed = localStorage.getItem('consumedItems');
+            if (storedConsumed) {
+                consumedItems = JSON.parse(storedConsumed);
+            }
+        }
+
+        // --- Shopping List Local Storage Management ---
+        function saveShoppingListToLocalStorage() {
+            localStorage.setItem('shoppingListItems', JSON.stringify(shoppingListItems));
+        }
+
+        function loadShoppingListFromLocalStorage() {
+            const storedItems = localStorage.getItem('shoppingListItems');
+            if (storedItems) {
+                shoppingListItems = JSON.parse(storedItems);
+            }
+        }
+
+        // --- Screen Navigation (for main app views) ---
+        function showScreen(screenId) {
+            // Hide all main screens
+            document.querySelectorAll('.screen').forEach(screen => {
+                screen.classList.remove('active');
+            });
+
+            // Activate the target main screen
+            const targetScreen = document.getElementById(screenId);
+            if (targetScreen) {
+                targetScreen.classList.add('active');
+                currentScreenId = screenId; // Update the current active main screen
+
+                // Specific rendering for each main screen
+                if (screenId === 'inventory-screen') {
+                    renderInventory();
+                    updateFavoriteInventoryFilterButton();
+                } else if (screenId === 'recipes-screen') {
+                    if (generatedRecipes.length === 0) {
+                        generateRecipesWithLLM();
+                    } else {
+                        applyRecipeFilters();
+                    }
+                    updateFavoriteRecipesFilterButton();
+                } else if (screenId === 'shopping-list-screen') {
+                    renderShoppingList();
+                } else if (screenId === 'recipe-favorites-screen') {
+                    renderFavoriteRecipes();
+                } else if (screenId === 'home-screen') {
+                    updateFoodConsumedSummary(); // Update consumed summary on home screen load
+                }
+            }
+
+            // Update navigation bar active state
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('text-blue-600');
+                item.classList.add('text-gray-500');
+            });
+            const activeNavItem = document.querySelector(`.nav-item[onclick*="showScreen('${screenId}')"]`);
+            if (activeNavItem) {
+                activeNavItem.classList.remove('text-gray-500');
+                activeNavItem.classList.add('text-blue-600');
+            }
+
+            // Ensure FAB is visible when on a main screen
+            document.getElementById('fab').style.display = 'flex';
+        }
+
+        // --- Modal Functions ---
+        function openModal(modalId, data = null) {
+            // Store the current main screen ID before opening the modal
+            previousScreenId = currentScreenId;
+
+            // Hide all main screens (optional, but ensures only modal is visible)
+            document.querySelectorAll('.screen').forEach(screen => {
+                screen.classList.remove('active');
+            });
+
+            // Activate the modal overlay
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.classList.add('active');
+                // Hide FAB when a modal is open
+                document.getElementById('fab').style.display = 'none';
+
+                // Handle specific modal data loading
+                if (modalId === 'recipe-details-screen' && data) {
+                    showRecipeDetails(data); // 'data' here is recipeId
+                } else if (modalId === 'mark-outcome-modal' && data) {
+                    showMarkOutcomeModal(data.name, data.id); // 'data' is {name, id}
+                } else if (modalId === 'update-portion-modal' && data) {
+                    showUpdatePortionModal(data); // 'data' is itemId
+                } else if (modalId === 'review-scanned-items-modal' && data) {
+                    showReviewScannedItemsModal(data); // 'data' is array of scanned items
+                } else if (modalId === 'takeout-entry-screen') {
+                    // Reset takeout form when opening
+                    const today = new Date();
+                    document.getElementById('takeout-date-added').value = formatDate(today);
+                    document.getElementById('dish-name').value = '';
+                    document.getElementById('cuisine-type').value = '';
+                    document.getElementById('takeout-storage-location').value = 'Fridge';
+                    document.getElementById('best-before-suggestion').classList.add('hidden');
+                } else if (modalId === 'add-food-manual-screen') {
+                    // Reset manual add form when opening
+                    document.getElementById('food-name').value = '';
+                    document.getElementById('quantity').value = '1';
+                    document.getElementById('unit').value = 'pcs';
+                    document.getElementById('expiration-date').value = '';
+                    document.getElementById('category').value = '';
+                    document.getElementById('storage-location').value = 'Fridge';
+                    document.getElementById('notes').value = '';
+                }
+            }
+        }
+
+        function closeModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.classList.remove('active');
+            }
+
+            // Return to the previously active main screen
+            if (previousScreenId) {
+                showScreen(previousScreenId);
+                previousScreenId = null; // Clear previous screen after returning
+            } else {
+                // Fallback to home screen if previousScreenId is not set (e.g., direct modal open on load)
+                showScreen('home-screen');
+            }
+
+            // Ensure FAB is visible after closing modal if returning to a main screen
+            document.getElementById('fab').style.display = 'flex';
+        }
+
+        // --- Global ESC Key Listener ---
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                // Find the currently active modal
+                const activeModal = document.querySelector('.modal-overlay.active');
+                if (activeModal) {
+                    closeModal(activeModal.id);
+                }
+            }
+        });
+
+        // --- FAB Menu Functions ---
+        // Changed showFabMenu to use openModal
+        // function showFabMenu() { openModal('fab-menu-modal'); }
+        // function hideFabMenu() { closeModal('fab-menu-modal'); } // This function is no longer needed as closeModal handles it
+
+        // --- Inventory Management ---
+        function renderInventory() {
+            const inventoryListDiv = document.getElementById('inventory-list');
+            inventoryListDiv.innerHTML = '';
+
+            let itemsToRender = showOnlyFavoriteInventory ? inventoryItems.filter(item => favoriteInventoryItems.includes(item.id)) : inventoryItems;
+
+            const categories = {};
+            itemsToRender.forEach(item => {
+                if (!categories[item.category]) {
+                    categories[item.category] = [];
+                }
+                categories[item.category].push(item);
+            });
+
+            const sortedCategoryNames = Object.keys(categories).sort();
+
+            if (sortedCategoryNames.length === 0) {
+                inventoryListDiv.innerHTML = '<p class="text-center text-gray-500 mt-8">Your inventory is empty. Add some food!</p>';
+                if (showOnlyFavoriteInventory) {
+                    inventoryListDiv.innerHTML = '<p class="text-center text-gray-500 mt-8">No favorited items in your inventory.</p>';
+                }
+                return;
+            }
+
+            sortedCategoryNames.forEach(categoryName => {
+                const sanitizedCategoryName = categoryName.replace(/[^a-zA-Z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
+                const categoryDiv = document.createElement('div');
+                categoryDiv.innerHTML = `<h2 class="text-2xl font-semibold mb-3 text-gray-800">${categoryName}</h2><div class="space-y-3" id="category-${sanitizedCategoryName}-items"></div>`;
+                inventoryListDiv.appendChild(categoryDiv);
+
+                const itemsDiv = categoryDiv.querySelector(`#category-${sanitizedCategoryName}-items`);
+                categories[categoryName].sort((a, b) => new Date(a.expirationDate) - new Date(b.expirationDate)).forEach(item => {
+                    const itemContainer = document.createElement('div');
+                    itemContainer.className = 'swipe-container'; // Wrapper for swipe actions
+
+                    const swipeActionsDiv = document.createElement('div');
+                    swipeActionsDiv.className = 'swipe-actions';
+                    swipeActionsDiv.innerHTML = `
+                        <div class="swipe-action-left text-xl">
+                            <i class="fas fa-trash-alt mr-2"></i> Expired
+                        </div>
+                        <div class="swipe-action-right text-xl">
+                            Consumed <i class="fas fa-check ml-2"></i>
+                        </div>
+                    `;
+                    itemContainer.appendChild(swipeActionsDiv);
+
+                    const itemCard = document.createElement('div');
+                    itemCard.className = 'swipe-card-content card flex justify-between items-center';
+                    itemCard.dataset.itemId = item.id; // Store item ID for gesture handling
+
+                    const daysUntilExp = getDaysUntilExpiration(item.expirationDate);
+                    let expirationText = '';
+                    let expirationColor = 'text-gray-500';
+
+                    if (daysUntilExp === Infinity) {
+                        expirationText = 'No expiration date';
+                    } else if (daysUntilExp === 0) {
+                        expirationText = 'Expires today!';
+                        expirationColor = 'text-red-600 font-semibold';
+                    } else if (daysUntilExp === 1) {
+                        expirationText = 'Expires tomorrow!';
+                        expirationColor = 'text-red-500';
+                    } else if (daysUntilExp > 1 && daysUntilExp <= 7) {
+                        expirationText = `Exp. in ${daysUntilExp} days`;
+                        expirationColor = 'text-yellow-600';
+                    } else if (daysUntilExp < 0) {
+                        expirationText = `Expired ${Math.abs(daysUntilExp)} days ago!`;
+                        expirationColor = 'text-red-700 font-bold';
+                    } else {
+                        expirationText = `Exp. on ${item.expirationDate}`;
+                    }
+                    
+                    // Display Best Eaten Within for Takeout items
+                    let bestBeforeInfo = '';
+                    if (item.type === 'Takeout' && item.bestBeforeSuggestionDays) {
+                        bestBeforeInfo = `<p class="text-xs text-purple-600 mt-1">Eat within ${item.bestBeforeSuggestionDays} days.</p>`;
+                    }
+
+                    const isFavoriteItem = favoriteInventoryItems.includes(item.id);
+                    const favoriteIconClass = isFavoriteItem ? 'fas fa-heart text-red-500' : 'far fa-heart text-gray-400';
+
+                    itemCard.innerHTML = `
+                        <div class="flex-grow">
+                            <p class="font-semibold text-lg">${item.name}</p>
+                            <p class="text-sm text-gray-600">${item.quantity} ${item.unit}</p>
+                            <p class="text-sm ${expirationColor}">${expirationText}</p>
+                            <p class="text-xs text-blue-600 mt-1">Store in ${item.storageLocation}.</p>
+                            ${bestBeforeInfo}
+                        </div>
+                        <div class="flex flex-col items-end space-y-2">
+                            <button class="text-2xl hover:text-red-500" onclick="event.stopPropagation(); toggleFavoriteItem('${item.id}')">
+                                <i class="${favoriteIconClass}"></i>
+                            </button>
+                            <button class="text-gray-500 hover:text-gray-800" onclick="event.stopPropagation(); openModal('mark-outcome-modal', {name: '${item.name}', id: '${item.id}'})">
+                                <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                        </div>
+                    `;
+                    itemContainer.appendChild(itemCard);
+                    itemsDiv.appendChild(itemContainer);
+
+                    // Add gesture event listeners
+                    addGestureListeners(itemCard);
+                });
+            });
+        }
+
+        function addItemToInventory() {
+            const foodName = document.getElementById('food-name').value.trim();
+            const quantity = parseFloat(document.getElementById('quantity').value);
+            const unit = document.getElementById('unit').value;
+            const expirationDate = document.getElementById('expiration-date').value;
+            const category = document.getElementById('category').value;
+            const storageLocation = document.getElementById('storage-location').value;
+            const notes = document.getElementById('notes').value.trim();
+
+            if (!foodName || isNaN(quantity) || quantity <= 0 || !unit || !expirationDate || !category || !storageLocation) {
+                alert('Please fill in all required fields (Food Name, Quantity, Unit, Expiration Date, Category, Storage Location).');
+                return;
+            }
+
+            const newItem = {
+                id: `item${Date.now()}`,
+                name: foodName,
+                quantity: quantity,
+                unit: unit,
+                expirationDate: expirationDate,
+                category: category,
+                storageLocation: storageLocation,
+                notes: notes,
+                type: 'Regular'
+            };
+
+            inventoryItems.push(newItem);
+            alert(`${foodName} added to inventory!`);
+        }
+
+        // --- Mark Outcome Modal ---
+        function showMarkOutcomeModal(foodName, itemId) {
+            document.getElementById('outcome-food-name').textContent = foodName;
+            document.getElementById('mark-outcome-modal').dataset.itemId = itemId;
+            document.querySelectorAll('input[name="outcome"]').forEach(radio => radio.checked = false);
+            document.getElementById('reason-dropdown-container').classList.add('hidden');
+        }
+
+        function handleOutcome() {
+            const selectedOutcome = document.querySelector('input[name="outcome"]:checked');
+            const itemId = document.getElementById('mark-outcome-modal').dataset.itemId;
+
+            if (!selectedOutcome || !itemId) {
+                alert('Please select an outcome.');
+                return;
+            }
+
+            const outcomeType = selectedOutcome.value;
+            let itemIndex = inventoryItems.findIndex(item => item.id === itemId);
+
+            if (itemIndex > -1) {
+                const item = inventoryItems[itemIndex];
+                if (outcomeType === 'ate') {
+                    // Add to consumed items log
+                    consumedItems.push({
+                        name: item.name,
+                        quantity: item.quantity,
+                        unit: item.unit,
+                        dateConsumed: formatDate(new Date())
+                    });
+                    saveConsumedItemsToLocalStorage();
+
+                    // Ask to add to shopping list when consumed
+                    if (confirm(`"${item.name}" marked as consumed. Do you want to add it to your shopping list for next time?`)) {
+                        shoppingListItems.push({
+                            id: `shop${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                            name: item.name,
+                            quantity: item.quantity,
+                            unit: item.unit,
+                            source: 'Consumed Item (Re-add)',
+                            bought: false
+                        });
+                        saveShoppingListToLocalStorage();
+                        alert(`"${item.name}" added to shopping list.`);
+                    }
+                    markAsConsumed(itemId); // Use the new function
+                } else if (outcomeType === 'tossed') {
+                    markAsExpired(itemId); // Use the new function
+                } else if (outcomeType === 'still') {
+                    alert(`${item.name} is still in inventory.`);
+                }
+                renderInventory();
+                updateFoodConsumedSummary(); // Update the consumed summary on the home screen
+            } else {
+                alert('Item not found in inventory.');
+            }
+        }
+
+        function toggleReasonDropdown(outcome) {
+            const reasonContainer = document.getElementById('reason-dropdown-container');
+            if (outcome === 'tossed') {
+                reasonContainer.classList.remove('hidden');
+            } else {
+                reasonContainer.classList.add('hidden');
+            }
+        }
+
+        // --- Gesture Handling Functions ---
+
+        function addGestureListeners(element) {
+            let startX, startY, startTime;
+            let isSwiping = false;
+            let isLongPress = false;
+            const itemCard = element; // The swipe-card-content div
+
+            itemCard.addEventListener('touchstart', (e) => {
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                startTime = Date.now();
+                isSwiping = false;
+                isLongPress = false;
+
+                // Start long press timer
+                longPressTimer = setTimeout(() => {
+                    isLongPress = true;
+                    openModal('update-portion-modal', itemCard.dataset.itemId); // Use openModal
+                    // Prevent swipe actions if long press is detected
+                    itemCard.style.transform = 'translateX(0)';
+                    itemCard.parentNode.querySelector('.swipe-action-left').classList.remove('active');
+                    itemCard.parentNode.querySelector('.swipe-action-right').classList.remove('active');
+                }, LONG_PRESS_DURATION);
+            });
+
+            itemCard.addEventListener('touchmove', (e) => {
+                const currentX = e.touches[0].clientX;
+                const currentY = e.touches[0].clientY;
+                const diffX = currentX - startX;
+                const diffY = currentY - startY;
+
+                // If vertical movement is significant, it's likely scrolling, not swiping
+                if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 10) {
+                    clearTimeout(longPressTimer);
+                    isSwiping = false;
+                    itemCard.style.transform = 'translateX(0)'; // Reset position
+                    itemCard.parentNode.querySelector('.swipe-action-left').classList.remove('active');
+                    itemCard.parentNode.querySelector('.swipe-action-right').classList.remove('active');
+                    return;
+                }
+
+                // If horizontal movement is significant, it's a swipe
+                if (Math.abs(diffX) > 10) { // Small threshold to detect start of swipe
+                    clearTimeout(longPressTimer); // Clear long press if swiping
+                    isSwiping = true;
+                    itemCard.style.transform = `translateX(${diffX}px)`;
+
+                    // Show/hide swipe actions based on direction
+                    if (diffX < 0) { // Swiping left (Expired)
+                        itemCard.parentNode.querySelector('.swipe-action-left').classList.add('active');
+                        itemCard.parentNode.querySelector('.swipe-action-right').classList.remove('active');
+                    } else { // Swiping right (Consumed)
+                        itemCard.parentNode.querySelector('.swipe-action-right').classList.add('active');
+                        itemCard.parentNode.querySelector('.swipe-action-left').classList.remove('active');
+                    }
+                }
+            });
+
+            itemCard.addEventListener('touchend', (e) => {
+                clearTimeout(longPressTimer); // Clear long press on touchend
+                const currentX = e.changedTouches[0].clientX;
+                const diffX = currentX - startX;
+                const itemID = itemCard.dataset.itemId;
+
+                if (isSwiping) {
+                    if (diffX < -SWIPE_THRESHOLD) { // Swiped left (Expired)
+                        markAsExpired(itemID);
+                    } else if (diffX > SWIPE_THRESHOLD) { // Swiped right (Consumed)
+                        const item = inventoryItems.find(i => i.id === itemID);
+                        if (item) { // Check if item exists before consuming
+                            consumedItems.push({
+                                name: item.name,
+                                quantity: item.quantity,
+                                unit: item.unit,
+                                dateConsumed: formatDate(new Date())
+                            });
+                            saveConsumedItemsToLocalStorage();
+                        }
+                        if (item && confirm(`"${item.name}" marked as consumed. Do you want to add it to your shopping list for next time?`)) {
+                            shoppingListItems.push({
+                                id: `shop${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                                name: item.name,
+                                quantity: item.quantity,
+                                unit: item.unit,
+                                source: 'Consumed Item (Re-add)',
+                                bought: false
+                            });
+                            saveShoppingListToLocalStorage();
+                            alert(`"${item.name}" added to shopping list.`);
+                        }
+                        markAsConsumed(itemID);
+                    }
+                }
+                // Reset card position and hide swipe actions
+                itemCard.style.transform = 'translateX(0)';
+                itemCard.parentNode.querySelector('.swipe-action-left').classList.remove('active');
+                itemCard.parentNode.querySelector('.swipe-action-right').classList.remove('active');
+            });
+
+            // Mouse events for desktop testing
+            let isMouseDown = false;
+            let mouseDownX = 0;
+            let mouseDownY = 0;
+            let mouseStartTime = 0;
+
+            itemCard.addEventListener('mousedown', (e) => {
+                isMouseDown = true;
+                mouseDownX = e.clientX;
+                mouseDownY = e.clientY;
+                mouseStartTime = Date.now();
+                isSwiping = false;
+                isLongPress = false;
+
+                longPressTimer = setTimeout(() => {
+                    isLongPress = true;
+                    openModal('update-portion-modal', itemCard.dataset.itemId); // Use openModal
+                    itemCard.style.transform = 'translateX(0)';
+                    itemCard.parentNode.querySelector('.swipe-action-left').classList.remove('active');
+                    itemCard.parentNode.querySelector('.swipe-action-right').classList.remove('active');
+                }, LONG_PRESS_DURATION);
+            });
+
+            itemCard.addEventListener('mousemove', (e) => {
+                if (!isMouseDown) return;
+
+                const currentX = e.clientX;
+                const currentY = e.clientY;
+                const diffX = currentX - mouseDownX;
+                const diffY = currentY - mouseDownY;
+
+                if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 10) {
+                    clearTimeout(longPressTimer);
+                    isSwiping = false;
+                    itemCard.style.transform = 'translateX(0)';
+                    itemCard.parentNode.querySelector('.swipe-action-left').classList.remove('active');
+                    itemCard.parentNode.querySelector('.swipe-action-right').classList.remove('active');
+                    return;
+                }
+
+                if (Math.abs(diffX) > 10) {
+                    clearTimeout(longPressTimer);
+                    isSwiping = true;
+                    itemCard.style.transform = `translateX(${diffX}px)`;
+
+                    if (diffX < 0) {
+                        itemCard.parentNode.querySelector('.swipe-action-left').classList.add('active');
+                        itemCard.parentNode.querySelector('.swipe-action-right').classList.remove('active');
+                    } else {
+                        itemCard.parentNode.querySelector('.swipe-action-right').classList.add('active');
+                        itemCard.parentNode.querySelector('.swipe-action-left').classList.remove('active');
+                    }
+                }
+            });
+
+            itemCard.addEventListener('mouseup', (e) => {
+                if (!isMouseDown) return;
+                isMouseDown = false;
+                clearTimeout(longPressTimer);
+
+                const currentX = e.clientX;
+                const diffX = currentX - mouseDownX;
+                const itemID = itemCard.dataset.itemId;
+
+                if (isSwiping) {
+                    if (diffX < -SWIPE_THRESHOLD) {
+                        markAsExpired(itemID);
+                    } else if (diffX > SWIPE_THRESHOLD) {
+                        const item = inventoryItems.find(i => i.id === itemID);
+                        if (item) { // Check if item exists before consuming
+                            consumedItems.push({
+                                name: item.name,
+                                quantity: item.quantity,
+                                unit: item.unit,
+                                dateConsumed: formatDate(new Date())
+                            });
+                            saveConsumedItemsToLocalStorage();
+                        }
+                        if (item && confirm(`"${item.name}" marked as consumed. Do you want to add it to your shopping list for next time?`)) {
+                            shoppingListItems.push({
+                                id: `shop${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                                name: item.name,
+                                quantity: item.quantity,
+                                unit: item.unit,
+                                source: 'Consumed Item (Re-add)',
+                                bought: false
+                            });
+                            saveShoppingListToLocalStorage();
+                            alert(`"${item.name}" added to shopping list.`);
+                        }
+                        markAsConsumed(itemID);
+                    }
+                }
+                itemCard.style.transform = 'translateX(0)';
+                itemCard.parentNode.querySelector('.swipe-action-left').classList.remove('active');
+                itemCard.parentNode.querySelector('.swipe-action-right').classList.remove('active');
+            });
+
+            itemCard.addEventListener('mouseleave', () => {
+                if (isMouseDown) { // If mouse leaves while dragging
+                    isMouseDown = false;
+                    clearTimeout(longPressTimer);
+                    itemCard.style.transform = 'translateX(0)';
+                    itemCard.parentNode.querySelector('.swipe-action-left').classList.remove('active');
+                    itemCard.parentNode.querySelector('.swipe-action-right').classList.remove('active');
+                }
+            });
+        }
+
+        function markAsConsumed(itemId) {
+            const itemIndex = inventoryItems.findIndex(item => item.id === itemId);
+            if (itemIndex > -1) {
+                const item = inventoryItems[itemIndex];
+                inventoryItems.splice(itemIndex, 1); // Remove item
+                // Also remove from favorites if it was favorited
+                favoriteInventoryItems = favoriteInventoryItems.filter(id => id !== itemId);
+                saveFavoritesToLocalStorage(); // Save changes
+                alert(`${item.name} marked as Consumed!`);
+                renderInventory();
+                updateFoodConsumedSummary(); // Update the consumed summary on the home screen
+                // In a real app, you'd add this to a 'consumed' log
+            }
+        }
+
+        function markAsExpired(itemId) {
+            const itemIndex = inventoryItems.findIndex(item => item.id === itemId);
+            if (itemIndex > -1) {
+                const item = inventoryItems[itemIndex];
+                inventoryItems.splice(itemIndex, 1); // Remove item
+                // Also remove from favorites if it was favorited
+                favoriteInventoryItems = favoriteInventoryItems.filter(id => id !== itemId);
+                saveFavoritesToLocalStorage(); // Save changes
+                alert(`${item.name} marked as Expired!`);
+                renderInventory();
+                updateFoodConsumedSummary(); // Update the consumed summary on the home screen
+                // In a real app, you'd add this to a 'wasted' log
+            }
+        }
+
+        // --- Update Portion Modal ---
+        let currentPortionItemId = null;
+        let originalItemQuantity = 0;
+        let originalItemUnit = '';
+
+        function showUpdatePortionModal(itemId) {
+            const item = inventoryItems.find(i => i.id === itemId);
+            if (!item) {
+                alert('Item not found for portion update.');
+                return;
+            }
+
+            currentPortionItemId = itemId;
+            originalItemQuantity = item.quantity;
+            originalItemUnit = item.unit;
+
+            document.getElementById('portion-food-name').textContent = item.name;
+            document.getElementById('current-quantity-display').textContent = `${item.quantity} ${item.unit}`;
+
+            // Reset to default (fraction) and set values
+            document.getElementById('portion-type').value = 'fraction';
+            document.getElementById('fraction-input-group').classList.remove('hidden');
+            document.getElementById('new-quantity-input-group').classList.add('hidden');
+            document.getElementById('portion-fraction').value = '0.25'; // Default to 1/4 used
+        }
+
+        function togglePortionInput() {
+            const portionType = document.getElementById('portion-type').value;
+            if (portionType === 'fraction') {
+                document.getElementById('fraction-input-group').classList.remove('hidden');
+                document.getElementById('new-quantity-input-group').classList.add('hidden');
+            } else {
+                document.getElementById('fraction-input-group').classList.add('hidden');
+                document.getElementById('new-quantity-input-group').classList.remove('hidden');
+                document.getElementById('new-quantity').value = originalItemQuantity; // Pre-fill with current quantity
+                document.getElementById('new-quantity-unit').textContent = originalItemUnit;
+            }
+        }
+
+        function updatePortion() {
+            const itemIndex = inventoryItems.findIndex(item => item.id === currentPortionItemId);
+            if (itemIndex === -1) {
+                alert('Error: Item not found for update.');
+                return;
+            }
+
+            const item = inventoryItems[itemIndex];
+            const portionType = document.getElementById('portion-type').value;
+            let newQuantity = item.quantity;
+
+            if (portionType === 'fraction') {
+                const fractionUsed = parseFloat(document.getElementById('portion-fraction').value);
+                if (fractionUsed === 1) { // All used, remove item
+                    // Add to consumed items log
+                    consumedItems.push({
+                        name: item.name,
+                        quantity: item.quantity,
+                        unit: item.unit,
+                        dateConsumed: formatDate(new Date())
+                    });
+                    saveConsumedItemsToLocalStorage();
+
+                    inventoryItems.splice(itemIndex, 1);
+                    // Also remove from favorites if it was favorited
+                    favoriteInventoryItems = favoriteInventoryItems.filter(id => id !== item.id);
+                    alert(`${item.name} fully consumed and removed!`);
+                } else {
+                    newQuantity = item.quantity * (1 - fractionUsed);
+                    // Add the consumed portion to consumed items log
+                    consumedItems.push({
+                        name: item.name,
+                        quantity: item.quantity * fractionUsed, // Only the consumed part
+                        unit: item.unit,
+                        dateConsumed: formatDate(new Date())
+                    });
+                    saveConsumedItemsToLocalStorage();
+
+                    item.quantity = parseFloat(newQuantity.toFixed(2)); // Round to 2 decimal places
+                    alert(`${item.name} updated to ${item.quantity} ${item.unit}.`);
+                }
+            } else { // new-quantity
+                const inputNewQuantity = parseFloat(document.getElementById('new-quantity').value);
+                if (isNaN(inputNewQuantity) || inputNewQuantity < 0) {
+                    alert('Please enter a valid new quantity.');
+                    return;
+                }
+                if (inputNewQuantity === 0) {
+                     // Add to consumed items log (the full original quantity)
+                    consumedItems.push({
+                        name: item.name,
+                        quantity: item.quantity,
+                        unit: item.unit,
+                        dateConsumed: formatDate(new Date())
+                    });
+                    saveConsumedItemsToLocalStorage();
+
+                    inventoryItems.splice(itemIndex, 1); // Remove if quantity becomes 0
+                    // Also remove from favorites if it was favorited
+                    favoriteInventoryItems = favoriteInventoryItems.filter(id => id !== item.id);
+                    alert(`${item.name} quantity set to 0 and removed!`);
+                } else {
+                    const consumedAmount = item.quantity - inputNewQuantity;
+                    if (consumedAmount > 0) {
+                        // Add the consumed portion to consumed items log
+                        consumedItems.push({
+                            name: item.name,
+                            quantity: consumedAmount,
+                            unit: item.unit,
+                            dateConsumed: formatDate(new Date())
+                        });
+                        saveConsumedItemsToLocalStorage();
+                    }
+                    item.quantity = parseFloat(inputNewQuantity.toFixed(2));
+                    alert(`${item.name} updated to ${item.quantity} ${item.unit}.`);
+                }
+            }
+
+            saveFavoritesToLocalStorage(); // Save changes
+            renderInventory();
+            updateFoodConsumedSummary(); // Update the consumed summary on the home screen
+        }
+
+        // --- Takeout Entry Functions ---
+        function showTakeoutEntryScreen() {
+            const today = new Date();
+            document.getElementById('takeout-date-added').value = formatDate(today);
+            document.getElementById('dish-name').value = '';
+            document.getElementById('cuisine-type').value = '';
+            document.getElementById('takeout-storage-location').value = 'Fridge';
+            document.getElementById('best-before-suggestion').classList.add('hidden');
+        }
+
+        function suggestBestBeforeDate() {
+            const dishName = document.getElementById('dish-name').value.toLowerCase();
+            const cuisineType = document.getElementById('cuisine-type').value.toLowerCase();
+            let suggestedDays = 3; // Default for most cooked foods
+
+            if (cuisineType === 'japanese' && dishName.includes('sushi')) {
+                suggestedDays = 1;
+            } else if (cuisineType === 'indian' || cuisineType.includes('thai') || dishName.includes('curry') || dishName.includes('stew')) {
+                suggestedDays = 4;
+            } else if (dishName.includes('pizza') || dishName.includes('fried chicken') || dishName.includes('noodles') || dishName.includes('rice')) {
+                suggestedDays = 2;
+            } else if (dishName.includes('soup')) {
+                suggestedDays = 4;
+            }
+
+            document.getElementById('suggested-days').textContent = suggestedDays;
+            document.getElementById('best-before-suggestion').classList.remove('hidden');
+            return suggestedDays;
+        }
+
+        function addTakeoutToInventory() {
+            const dishName = document.getElementById('dish-name').value.trim();
+            const cuisineType = document.getElementById('cuisine-type').value;
+            const storageLocation = document.getElementById('takeout-storage-location').value;
+            const dateAdded = document.getElementById('takeout-date-added').value;
+
+            if (!dishName || !cuisineType || !storageLocation || !dateAdded) {
+                alert('Please fill in all required fields for takeout entry.');
+                return;
+            }
+
+            const suggestedDays = suggestBestBeforeDate(); // Get the suggested days
+            const date = new Date(dateAdded);
+            date.setDate(date.getDate() + suggestedDays);
+            const bestBeforeDate = formatDate(date);
+
+            const newTakeoutItem = {
+                id: `takeout${Date.now()}`,
+                name: dishName,
+                quantity: 1, // Takeout is usually 1 meal/portion
+                unit: 'meal',
+                expirationDate: bestBeforeDate, // Use the calculated best before date as expiration
+                category: 'Takeout', // Fixed category for takeout
+                storageLocation: storageLocation,
+                notes: `Cuisine: ${cuisineType}. Suggested: Eat within ${suggestedDays} days.`,
+                type: 'Takeout',
+                bestBeforeSuggestionDays: suggestedDays // Store the suggestion
+            };
+
+            inventoryItems.push(newTakeoutItem);
+            alert(`${dishName} (Takeout) added to inventory!`);
+        }
+
+
+        // --- Receipt Scanner Functions ---
+
+        function previewReceiptImage(event) {
+            const reader = new FileReader();
+            reader.onload = function(){
+                const output = document.getElementById('receipt-preview');
+                output.src = reader.result;
+                output.classList.remove('hidden');
+                document.getElementById('receipt-placeholder-text').classList.add('hidden');
+            };
+            if (event.target.files[0]) {
+                reader.readAsDataURL(event.target.files[0]);
+            } else {
+                document.getElementById('receipt-preview').classList.add('hidden');
+                document.getElementById('receipt-placeholder-text').classList.remove('hidden');
+            }
+        }
+
+        async function processReceiptImage() {
+            const imageInput = document.getElementById('receipt-image-input');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const loadingMessage = document.getElementById('loading-message');
+
+            let imageFile = imageInput.files[0];
+
+            if (!imageFile) {
+                alert('Please select an image file first.');
+                return;
+            }
+
+            loadingMessage.textContent = 'Processing receipt...';
+            loadingOverlay.style.display = 'flex';
+
+            const formData = new FormData();
+            formData.append('receipt_image', imageFile);
+
+            try {
+                // This is a placeholder for actual OCR API call
+                // In a real app, you'd send formData to a backend endpoint
+                // and get parsed data back.
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
+
+                const data = { // Simulated OCR result
+                    items: [
+                        { name: 'Bananas', quantity: '2', unit: 'lbs' },
+                        { name: 'Organic Eggs', quantity: '1', unit: 'dozen' },
+                        { name: 'Ground Beef', quantity: '1.5', unit: 'lb' },
+                        { name: 'Cheddar Cheese', quantity: '1', unit: 'block' },
+                        { name: 'Whole Wheat Bread', quantity: '1', unit: 'loaf' },
+                        { name: 'Avocados', quantity: '3', unit: 'pcs' }
+                    ]
+                };
+
+                // const response = await fetch('http://127.0.0.1:5000/scan_receipt', { // Example backend call
+                //     method: 'POST',
+                //     body: formData
+                // });
+
+                // if (!response.ok) {
+                //     throw new Error(`HTTP error! status: ${response.status}`);
+                // }
+
+                // const data = await response.json();
+                console.log("OCR Result:", data);
+
+                if (data.items && data.items.length > 0) {
+                    openModal('review-scanned-items-modal', data.items); // Use openModal
+                } else {
+                    alert('No items recognized from the receipt. Please try again with a clearer image or manually add items.');
+                    closeModal('receipt-scanner-screen'); // Use closeModal
+                }
+
+            } catch (error) {
+                alert('Error processing receipt: ' + error.message + '. Ensure the Flask backend is running and accessible (if using one).');
+                console.error('Fetch/Processing error:', error);
+                closeModal('receipt-scanner-screen'); // Use closeModal
+            } finally {
+                loadingOverlay.style.display = 'none';
+            }
+        }
+
+        const placeholderReceiptData = [
+            { name: 'Milk', quantity: '1', unit: 'gal' },
+            { name: 'Coffee', quantity: '1', unit: 'bag' },
+            { name: 'Apples', quantity: '5', unit: 'pcs' },
+            { name: 'Yogurt', quantity: '4', unit: 'cups' }
+        ];
+
+        function usePlaceholderReceipt() {
+            showLoadingOverlay('Loading placeholder receipt...');
+            setTimeout(() => {
+                hideLoadingOverlay();
+                openModal('review-scanned-items-modal', placeholderReceiptData); // Use openModal
+            }, 1000); // Simulate loading
+        }
+
+
+        function showReviewScannedItemsModal(scannedItems) {
+            const scannedItemsListDiv = document.getElementById('scanned-items-list');
+            scannedItemsListDiv.innerHTML = '';
+
+            if (scannedItems.length === 0) {
+                scannedItemsListDiv.innerHTML = '<p class="text-center text-gray-500">No items recognized. You can add them manually below.</p>';
+            }
+
+            scannedItems.forEach((item, index) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'flex flex-col space-y-2 p-3 border rounded-md bg-gray-50';
+                itemDiv.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <label class="block text-sm font-medium text-gray-700 w-1/4">Name:</label>
+                        <input type="text" value="${item.name || ''}" class="flex-grow scanned-item-name" data-index="${index}">
+                        <button class="text-red-500 ml-2" onclick="removeScannedItem(${index})">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <label class="block text-sm font-medium text-gray-700 w-1/4">Quantity:</label>
+                        <input type="number" value="${item.quantity || '1'}" class="flex-grow scanned-item-quantity" data-index="${index}" min="0">
+                        <label class="block text-sm font-medium text-gray-700 ml-2">Unit:</label>
+                        <select class="scanned-item-unit w-24 ml-2" data-index="${index}">
+                            ${['pcs', 'ea', 'bag', 'box', 'can', 'bottle', 'pack', 'bunch', 'head', 'lbs', 'oz', 'g', 'kg', 'fl oz', 'cup', 'pint', 'quart', 'gal', 'ml', 'L', 'tsp', 'tbsp', 'dozen'].map(unit => `<option value="${unit}" ${item.unit && item.unit.toLowerCase() === unit ? 'selected' : ''}>${unit}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <label class="block text-sm font-medium text-gray-700 w-1/4">Storage:</label>
+                        <select class="scanned-item-storage w-full" data-index="${index}">
+                            <option>Fridge</option>
+                            <option>Pantry</option>
+                            <option>Freezer</option>
+                            <option>Countertop</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <label class="block text-sm font-medium text-gray-700 w-1/4">Category:</label>
+                        <select class="scanned-item-category w-full" data-index="${index}">
+                            <option value="">Select Category</option>
+                            <option>Produce</option>
+                            <option>Dairy</option>
+                            <option>Meat</option>
+                            <option>Seafood</option>
+                            <option>Grains & Pasta</option>
+                            <option>Canned Goods</option>
+                            <option>Frozen Foods</option>
+                            <option>Snacks</option>
+                            <option>Beverages</option>
+                            <option>Baking Supplies</option>
+                            <option>Spices & Seasonings</option>
+                            <option>Condiments & Sauces</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <label class="block text-sm font-medium text-gray-700 w-1/4">Exp. Date:</label>
+                        <input type="date" class="flex-grow scanned-item-exp-date" data-index="${index}">
+                    </div>
+                `;
+                scannedItemsListDiv.appendChild(itemDiv);
+            });
+
+            window.tempScannedItems = scannedItems;
+        }
+
+        function removeScannedItem(indexToRemove) {
+            if (confirm('Are you sure you want to remove this item from the scanned list?')) {
+                window.tempScannedItems.splice(indexToRemove, 1);
+                showReviewScannedItemsModal(window.tempScannedItems);
+            }
+        }
+
+        function addScannedItemsToInventory() {
+            const itemElements = document.querySelectorAll('#scanned-items-list > div');
+            let itemsToAdd = [];
+
+            itemElements.forEach((itemEl, index) => {
+                const name = itemEl.querySelector('.scanned-item-name').value.trim();
+                const quantity = parseFloat(itemEl.querySelector('.scanned-item-quantity').value);
+                const unit = itemEl.querySelector('.scanned-item-unit').value;
+                const storageLocation = itemEl.querySelector('.scanned-item-storage').value;
+                const category = itemEl.querySelector('.scanned-item-category').value;
+                const expirationDate = itemEl.querySelector('.scanned-item-exp-date').value;
+
+
+                if (!name || isNaN(quantity) || quantity <= 0 || !unit || !storageLocation || !category) {
+                    alert(`Please ensure all details are filled for item ${index + 1} (Name, Quantity, Unit, Storage, Category).`);
+                    itemsToAdd = [];
+                    return;
+                }
+
+                itemsToAdd.push({
+                    id: `item${Date.now()}-${index}`,
+                    name: name,
+                    quantity: quantity,
+                    unit: unit,
+                    expirationDate: expirationDate,
+                    category: category,
+                    storageLocation: storageLocation,
+                    notes: 'Added from receipt scan',
+                    type: 'Regular'
+                });
+            });
+
+            if (itemsToAdd.length > 0) {
+                inventoryItems.push(...itemsToAdd);
+                alert(`${itemsToAdd.length} items added to inventory from receipt!`);
+            } else {
+                alert('No valid items to add to inventory.');
+            }
+        }
+
+        // --- Recipe Generation & Display ---
+        async function generateRecipesWithLLM() {
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const loadingMessage = document.getElementById('loading-message');
+            loadingMessage.textContent = 'Generating recipes...';
+            loadingOverlay.style.display = 'flex';
+
+            const inventoryList = inventoryItems.map(item => `${item.name} (${item.quantity} ${item.unit}, expires ${item.expirationDate})`).join(', ');
+            const prompt = `Given the following inventory: ${inventoryList}. Suggest 5 recipes. For each recipe, provide its name, cooking time (e.g., "30 min"), method (e.g., "Bake", "Stir-fry"), cuisine (e.g., "Italian", "Asian"), dietary tags (e.g., "Vegetarian", "Gluten-Free"), a short list of ingredients with quantity and unit (e.g., "1 cup milk", "2 large eggs"), and simple instructions. Ensure the output is a JSON array of recipe objects.`;
+
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+            const payload = {
+                contents: chatHistory,
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                "id": { "type": "STRING" },
+                                "name": { "type": "STRING" },
+                                "cookingTime": { "type": "STRING" },
+                                "method": { "type": "STRING" },
+                                "cuisine": { "type": "STRING" },
+                                "dietaryTags": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "ingredients": {
+                                    "type": "ARRAY",
+                                    "items": {
+                                        "type": "OBJECT",
+                                        "properties": {
+                                            "name": { "type": "STRING" },
+                                            "quantity": { "type": "STRING" },
+                                            "unit": { "type": "STRING" }
+                                        },
+                                        "propertyOrdering": ["name", "quantity", "unit"]
+                                    }
+                                },
+                                "instructions": { "type": "ARRAY", "items": { "type": "STRING" } }
+                            },
+                            "propertyOrdering": ["id", "name", "cookingTime", "method", "cuisine", "dietaryTags", "ingredients", "instructions"]
+                        }
+                    }
+                }
+            };
+
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const json = result.candidates[0].content.parts[0].text;
+                    generatedRecipes = JSON.parse(json);
+                    generatedRecipes.forEach((recipe, index) => {
+                        if (!recipe.id) recipe.id = `recipe${Date.now()}-${index}`;
+                    });
+                    applyRecipeFilters();
+                } else {
+                    alert('Failed to generate recipes. Please try again.');
+                    console.error('LLM response structure unexpected:', result);
+                    generatedRecipes = [];
+                    renderRecipes([]);
+                }
+            } catch (error) {
+                alert('Error generating recipes: ' + error.message);
+                console.error('Error in LLM API call:', error);
+                generatedRecipes = [];
+                renderRecipes([]);
+            } finally {
+                loadingOverlay.style.display = 'none';
+            }
+        }
+
+        function checkIngredientAvailability(recipeIngredients) {
+            let missingCount = 0;
+            let availableIngredients = [];
+            let missingIngredients = [];
+            let expiringSoonIngredients = [];
+
+            recipeIngredients.forEach(recIng => {
+                const foundInInventory = inventoryItems.find(invItem =>
+                    invItem.name.toLowerCase().includes(recIng.name.toLowerCase()) ||
+                    recIng.name.toLowerCase().includes(invItem.name.toLowerCase())
+                );
+
+                if (foundInInventory) {
+                    availableIngredients.push(recIng.name);
+                    const daysUntilExp = getDaysUntilExpiration(foundInInventory.expirationDate);
+                    if (daysUntilExp >= 0 && daysUntilExp <= 7) {
+                        expiringSoonIngredients.push(recIng.name);
+                    }
+                } else {
+                    missingCount++;
+                    missingIngredients.push(recIng.name);
+                }
+            });
+
+            return {
+                isFullyAvailable: missingCount === 0,
+                missingCount: missingCount,
+                availableIngredients: availableIngredients,
+                missingIngredients: missingIngredients,
+                expiringSoonIngredients: expiringSoonIngredients
+            };
+        }
+
+        function renderRecipes(recipesToRender) {
+            const recipeListDiv = document.getElementById('recipe-list');
+            recipeListDiv.innerHTML = '';
+
+            let recipesToDisplay = showOnlyFavoriteRecipes ? recipesToRender.filter(recipe => favoriteRecipes.includes(recipe.id)) : recipesToRender;
+
+
+            if (recipesToDisplay.length === 0) {
+                recipeListDiv.innerHTML = '<p class="text-center text-gray-500 mt-8 col-span-full">No recipes found matching your criteria. Try generating new ones or adjusting filters.</p>';
+                if (showOnlyFavoriteRecipes) {
+                    recipeListDiv.innerHTML = '<p class="text-center text-gray-500 mt-8 col-span-full">No favorited recipes.</p>';
+                }
+                return;
+            }
+
+            recipesToDisplay.forEach(recipe => {
+                const availability = checkIngredientAvailability(recipe.ingredients);
+                const isFavorite = favoriteRecipes.includes(recipe.id);
+
+                let statusHtml = '';
+                if (availability.isFullyAvailable) {
+                    statusHtml = `<div class="flex items-center mt-2">
+                                    <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                                    <span class="text-green-700 font-medium">Can cook now</span>
+                                  </div>`;
+                } else {
+                    statusHtml = `<div class="flex items-center mt-2">
+                                    <i class="fas fa-exclamation-triangle text-red-500 mr-2"></i>
+                                    <span class="text-red-700 font-medium">Missing ${availability.missingCount} ingredients</span>
+                                  </div>`;
+                }
+
+                const recipeCard = document.createElement('div');
+                recipeCard.className = 'card cursor-pointer relative';
+                recipeCard.innerHTML = `
+                    <img src="https://placehold.co/300x200/D1FAE5/065F46?text=Recipe" onerror="this.onerror=null;this.src='https://placehold.co/300x200/D1FAE5/065F46?text=Recipe';" alt="${recipe.name}" class="w-full h-40 object-cover rounded-lg mb-3">
+                    <h3 class="text-lg font-semibold">${recipe.name}</h3>
+                    <p class="text-sm text-gray-600">${recipe.cookingTime} | ${recipe.cuisine} | ${recipe.dietaryTags.join(', ')}</p>
+                    ${statusHtml}
+                    <button class="absolute top-4 right-4 text-2xl ${isFavorite ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}" onclick="event.stopPropagation(); toggleFavorite('${recipe.id}')">
+                        <i class="${isFavorite ? 'fas' : 'far'} fa-heart"></i>
+                    </button>
+                `;
+                recipeCard.onclick = () => openModal('recipe-details-screen', recipe.id); // Use openModal
+                recipeListDiv.appendChild(recipeCard);
+            });
+        }
+
+        function applyRecipeFilters() {
+            let filteredRecipes = [...generatedRecipes];
+
+            const availabilityFilter = document.getElementById('recipe-availability-filter').value;
+            const cuisineFilter = document.getElementById('recipe-cuisine-filter').value;
+            const expiringFilter = document.getElementById('recipe-expiring-filter').checked;
+
+            if (availabilityFilter !== 'all') {
+                filteredRecipes = filteredRecipes.filter(recipe => {
+                    const availability = checkIngredientAvailability(recipe.ingredients);
+                    if (availabilityFilter === 'can-cook') {
+                        return availability.isFullyAvailable;
+                    } else if (availabilityFilter === 'missing') {
+                        return !availability.isFullyAvailable;
+                    }
+                    return true;
+                });
+            }
+
+            if (cuisineFilter !== 'All') {
+                filteredRecipes = filteredRecipes.filter(recipe => recipe.cuisine === cuisineFilter);
+            }
+
+            if (expiringFilter) {
+                filteredRecipes.sort((a, b) => {
+                    const availA = checkIngredientAvailability(a.ingredients);
+                    const availB = checkIngredientAvailability(b.ingredients);
+
+                    if (availA.expiringSoonIngredients.length !== availB.expiringSoonIngredients.length) {
+                        return availB.expiringSoonIngredients.length - availA.expiringSoonIngredients.length;
+                    }
+                    if (availA.isFullyAvailable !== availB.isFullyAvailable) {
+                        return availB.isFullyAvailable - availA.isFullyAvailable;
+                    }
+                    return availA.missingCount - availB.missingCount;
+                });
+            }
+
+            renderRecipes(filteredRecipes);
+        }
+
+        let currentRecipeDetailId = null;
+
+        function showRecipeDetails(recipeId) {
+            const recipe = generatedRecipes.find(r => r.id === recipeId);
+            if (!recipe) {
+                alert('Recipe details not found.');
+                return;
+            }
+            currentRecipeDetailId = recipeId;
+
+            document.getElementById('recipe-detail-name').textContent = recipe.name;
+            document.getElementById('recipe-detail-image').src = `https://placehold.co/600x400/A7F3D0/065F46?text=${recipe.name.replace(/\s/g, '+')}`;
+            document.getElementById('recipe-detail-time').textContent = recipe.cookingTime;
+            document.getElementById('recipe-detail-cuisine').textContent = recipe.cuisine;
+            document.getElementById('recipe-detail-dietary').textContent = recipe.dietaryTags.join(', ');
+
+            const ingredientsList = document.getElementById('recipe-detail-ingredients');
+            ingredientsList.innerHTML = '';
+            const availability = checkIngredientAvailability(recipe.ingredients);
+
+            recipe.ingredients.forEach(recIng => {
+                const li = document.createElement('li');
+                li.className = 'flex items-center';
+                let statusIcon = '';
+                let statusClass = '';
+                let expirationAlert = '';
+
+                const foundInInventory = inventoryItems.find(invItem =>
+                    invItem.name.toLowerCase().includes(recIng.name.toLowerCase()) ||
+                    recIng.name.toLowerCase().includes(invItem.name.toLowerCase())
+                );
+
+                if (foundInInventory) {
+                    statusIcon = '<i class="fas fa-check-circle text-green-500 mr-2"></i>';
+                    statusClass = 'text-gray-800';
+                    const daysUntilExp = getDaysUntilExpiration(foundInInventory.expirationDate);
+                    if (daysUntilExp >= 0 && daysUntilExp <= 7) {
+                        expirationAlert = `<span class="ml-2 text-sm text-red-500 font-semibold">Exp. in ${daysUntilExp} days!</span>`;
+                    } else if (daysUntilExp < 0) {
+                        expirationAlert = `<span class="ml-2 text-sm text-red-700 font-bold">Expired!</span>`;
+                    }
+                } else {
+                    statusIcon = '<i class="fas fa-times-circle text-red-500 mr-2"></i>';
+                    statusClass = 'text-red-700 font-medium';
+                }
+                li.innerHTML = `${statusIcon}<span class="${statusClass}">${recIng.quantity} ${recIng.unit} ${recIng.name}</span>${expirationAlert}`;
+                ingredientsList.appendChild(li);
+            });
+
+            const instructionsList = document.getElementById('recipe-detail-instructions');
+            instructionsList.innerHTML = '';
+            recipe.instructions.forEach(instruction => {
+                const li = document.createElement('li');
+                li.textContent = instruction;
+                instructionsList.appendChild(li);
+            });
+
+            const favBtn = document.getElementById('recipe-detail-favorite-btn');
+            if (favoriteRecipes.includes(recipeId)) {
+                favBtn.classList.remove('text-gray-400', 'hover:text-red-500');
+                favBtn.classList.add('text-red-500');
+                favBtn.querySelector('i').classList.replace('far', 'fas');
+            } else {
+                favBtn.classList.remove('text-red-500');
+                favBtn.classList.add('text-gray-400', 'hover:text-red-500');
+                favBtn.querySelector('i').classList.replace('fas', 'far');
+            }
+        }
+
+        // --- Favoriting Functions ---
+        function toggleFavoriteItem(itemId) {
+            if (favoriteInventoryItems.includes(itemId)) {
+                favoriteInventoryItems = favoriteInventoryItems.filter(id => id !== itemId);
+                alert('Item removed from inventory favorites!');
+            } else {
+                favoriteInventoryItems.push(itemId);
+                alert('Item added to inventory favorites!');
+            }
+            saveFavoritesToLocalStorage();
+            renderInventory(); // Re-render inventory to update heart icons
+        }
+
+        function toggleFavorite(recipeId) {
+            if (favoriteRecipes.includes(recipeId)) {
+                favoriteRecipes = favoriteRecipes.filter(id => id !== recipeId);
+                alert('Recipe removed from favorites!');
+            } else {
+                favoriteRecipes.push(recipeId);
+                alert('Recipe added to favorites!');
+            }
+            saveFavoritesToLocalStorage();
+            applyRecipeFilters(); // Re-render recipe list to update heart icons
+            // If on details screen, update its heart icon
+            if (currentRecipeDetailId === recipeId) {
+                const favBtn = document.getElementById('recipe-detail-favorite-btn');
+                if (favoriteRecipes.includes(recipeId)) {
+                    favBtn.classList.remove('text-gray-400', 'hover:text-red-500');
+                    favBtn.classList.add('text-red-500');
+                    favBtn.querySelector('i').classList.replace('far', 'fas');
+                } else {
+                    favBtn.classList.remove('text-red-500');
+                    favBtn.classList.add('text-gray-400', 'hover:text-red-500');
+                    favBtn.querySelector('i').classList.replace('fas', 'far');
+                }
+            }
+        }
+
+        function toggleFavoriteFromDetails() {
+            if (currentRecipeDetailId) {
+                toggleFavorite(currentRecipeDetailId);
+            }
+        }
+
+        function renderFavoriteRecipes() {
+            const favoriteListDiv = document.getElementById('favorite-recipe-list');
+            favoriteListDiv.innerHTML = '';
+            const noFavoritesMessage = document.getElementById('no-favorites-message');
+
+            if (favoriteRecipes.length === 0) {
+                noFavoritesMessage.classList.remove('hidden');
+                return;
+            } else {
+                noFavoritesMessage.classList.add('hidden');
+            }
+
+            const favRecipesToRender = generatedRecipes.filter(recipe => favoriteRecipes.includes(recipe.id));
+
+            if (favRecipesToRender.length === 0 && favoriteRecipes.length > 0) {
+                // This case happens if favoriteRecipes has IDs but the actual recipes are not in generatedRecipes (e.g., after refresh without regenerating)
+                favoriteListDiv.innerHTML = '<p class="text-center text-gray-500 mt-8 col-span-full">Some favorite recipes could not be loaded. Try regenerating recipes on the Recipes tab.</p>';
+                return;
+            }
+
+            favRecipesToRender.forEach(recipe => {
+                const availability = checkIngredientAvailability(recipe.ingredients);
+                let statusHtml = '';
+                if (availability.isFullyAvailable) {
+                    statusHtml = `<div class="flex items-center mt-2">
+                                    <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                                    <span class="text-green-700 font-medium">Can cook now</span>
+                                  </div>`;
+                } else {
+                    statusHtml = `<div class="flex items-center mt-2">
+                                    <i class="fas fa-exclamation-triangle text-red-500 mr-2"></i>
+                                    <span class="text-red-700 font-medium">Missing ${availability.missingCount} ingredients</span>
+                                  </div>`;
+                }
+
+                const recipeCard = document.createElement('div');
+                recipeCard.className = 'card cursor-pointer relative';
+                recipeCard.innerHTML = `
+                    <img src="https://placehold.co/300x200/D1FAE5/065F46?text=Recipe" onerror="this.onerror=null;this.src='https://placehold.co/300x200/D1FAE5/065F46?text=Recipe';" alt="${recipe.name}" class="w-full h-40 object-cover rounded-lg mb-3">
+                    <h3 class="text-lg font-semibold">${recipe.name}</h3>
+                    <p class="text-sm text-gray-600">${recipe.cookingTime} | ${recipe.cuisine} | ${recipe.dietaryTags.join(', ')}</p>
+                    ${statusHtml}
+                    <button class="absolute top-4 right-4 text-2xl text-red-500" onclick="event.stopPropagation(); toggleFavorite('${recipe.id}')">
+                        <i class="fas fa-heart"></i>
+                    </button>
+                `;
+                recipeCard.onclick = () => openModal('recipe-details-screen', recipe.id); // Use openModal
+                favoriteListDiv.appendChild(recipeCard);
+            });
+        }
+
+        // --- Favorite Filter Buttons ---
+        function toggleFavoriteInventoryFilter() {
+            showOnlyFavoriteInventory = !showOnlyFavoriteInventory;
+            updateFavoriteInventoryFilterButton();
+            renderInventory(); // Re-render inventory with the new filter
+        }
+
+        function updateFavoriteInventoryFilterButton() {
+            const btn = document.getElementById('filter-favorite-inventory-btn');
+            if (showOnlyFavoriteInventory) {
+                btn.classList.remove('text-gray-600', 'hover:text-red-500');
+                btn.classList.add('text-red-500');
+                btn.querySelector('i').classList.replace('far', 'fas');
+            } else {
+                btn.classList.remove('text-red-500');
+                btn.classList.add('text-gray-600', 'hover:text-red-500');
+                btn.querySelector('i').classList.replace('fas', 'far');
+            }
+        }
+
+        function toggleFavoriteRecipesFilter() {
+            showOnlyFavoriteRecipes = !showOnlyFavoriteRecipes;
+            updateFavoriteRecipesFilterButton();
+            applyRecipeFilters(); // Re-render recipes with the new filter
+        }
+
+        function updateFavoriteRecipesFilterButton() {
+            const btn = document.getElementById('filter-favorite-recipes-btn');
+            if (showOnlyFavoriteRecipes) {
+                btn.classList.remove('text-gray-600', 'hover:text-red-500');
+                btn.classList.add('text-red-500');
+                btn.querySelector('i').classList.replace('far', 'fas');
+            } else {
+                btn.classList.remove('text-red-500');
+                btn.classList.add('text-gray-600', 'hover:text-red-500');
+                btn.querySelector('i').classList.replace('fas', 'far');
+            }
+        }
+
+
+        // --- Shopping List Management ---
+        function renderShoppingList() {
+            const shoppingListDiv = document.getElementById('shopping-list-items');
+            shoppingListDiv.innerHTML = '';
+
+            if (shoppingListItems.length === 0) {
+                shoppingListDiv.innerHTML = '<p class="text-center text-gray-500 mt-8">Your shopping list is empty. Add missing ingredients from recipes!</p>';
+                return;
+            }
+
+            shoppingListItems.forEach(item => {
+                const itemCard = document.createElement('div');
+                itemCard.className = 'card flex items-center justify-between';
+                itemCard.innerHTML = `
+                    <div class="flex items-center">
+                        <input type="checkbox" class="h-5 w-5 rounded-md text-blue-600 mr-3" onchange="toggleShoppingItemBought('${item.id}', this.checked)" ${item.bought ? 'checked' : ''}>
+                        <div>
+                            <p class="font-semibold text-lg ${item.bought ? 'line-through text-gray-500' : ''}">${item.name}</p>
+                            <p class="text-sm text-gray-600">${item.quantity} ${item.unit} <span class="ml-2 text-xs text-gray-500">(${item.source})</span></p>
+                        </div>
+                    </div>
+                    <button class="text-red-500 hover:text-red-700" onclick="removeShoppingItem('${item.id}')">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                `;
+                shoppingListDiv.appendChild(itemCard);
+            });
+        }
+
+        function addMissingToShoppingListFromDetails() {
+            if (!currentRecipeDetailId) return;
+            const recipe = generatedRecipes.find(r => r.id === currentRecipeDetailId);
+            if (!recipe) return;
+
+            // Use the main inventory for checking availability
+            const availability = checkIngredientAvailability(recipe.ingredients);
+            if (availability.missingCount === 0) {
+                alert('All ingredients for this recipe are already in your inventory!');
+                return;
+            }
+
+            availability.missingIngredients.forEach(missingIngName => {
+                const fullIng = recipe.ingredients.find(ing => ing.name.toLowerCase() === missingIngName.toLowerCase());
+                if (fullIng) {
+                    const existingItem = shoppingListItems.find(item => item.name.toLowerCase() === fullIng.name.toLowerCase() && !item.bought);
+                    if (!existingItem) {
+                        shoppingListItems.push({
+                            id: `shop${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                            name: fullIng.name,
+                            quantity: fullIng.quantity,
+                            unit: fullIng.unit,
+                            source: `From Recipe: ${recipe.name}`,
+                            bought: false
+                        });
+                    }
+                }
+            });
+            saveShoppingListToLocalStorage(); // Save after adding
+            alert(`${availability.missingCount} missing ingredients added to shopping list!`);
+            renderShoppingList();
+            showScreen('shopping-list-screen');
+        }
+
+        function addManualShoppingItem() {
+            const itemText = document.getElementById('manual-shopping-item').value.trim();
+            if (!itemText) {
+                alert('Please enter an item to add to the shopping list.');
+                return;
+            }
+            const parts = itemText.split(' ');
+            let name = itemText;
+            let quantity = 1;
+            let unit = 'pcs';
+
+            const commonUnits = ['pcs', 'ea', 'bag', 'box', 'can', 'bottle', 'pack', 'bunch', 'head', 'lbs', 'oz', 'g', 'kg', 'fl oz', 'cup', 'pint', 'quart', 'gal', 'ml', 'L', 'tsp', 'tbsp', 'dozen'];
+            if (parts.length >= 2) {
+                const lastPart = parts[parts.length - 1].toLowerCase();
+                const secondLastPart = parts[parts.length - 2];
+
+                if (commonUnits.includes(lastPart)) {
+                    unit = lastPart;
+                    if (!isNaN(parseFloat(secondLastPart))) {
+                        quantity = parseFloat(secondLastPart);
+                        name = parts.slice(0, -2).join(' ');
+                    } else {
+                        name = parts.slice(0, -1).join(' ');
+                    }
+                } else if (!isNaN(parseFloat(lastPart))) {
+                    quantity = parseFloat(lastPart);
+                    name = parts.slice(0, -1).join(' ');
+                }
+            }
+            if (!name) name = itemText; // Fallback if parsing fails
+
+            shoppingListItems.push({
+                id: `manual${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                name: name,
+                quantity: quantity,
+                unit: unit,
+                source: 'Manual Add',
+                bought: false
+            });
+            document.getElementById('manual-shopping-item').value = '';
+            saveShoppingListToLocalStorage();
+            renderShoppingList();
+            alert(`${name} added to shopping list.`);
+        }
+
+        function toggleShoppingItemBought(itemId, isChecked) {
+            const item = shoppingListItems.find(i => i.id === itemId);
+            if (item) {
+                item.bought = isChecked;
+                saveShoppingListToLocalStorage();
+                renderShoppingList();
+            }
+        }
+
+        function removeShoppingItem(itemId) {
+            const itemIndex = shoppingListItems.findIndex(item => item.id === itemId);
+            if (itemIndex > -1) {
+                const removedItem = shoppingListItems[itemIndex];
+                
+                // First confirmation: remove from list
+                if (confirm(`Are you sure you want to remove "${removedItem.name}" from your shopping list?`)) {
+                    shoppingListItems.splice(itemIndex, 1);
+                    saveShoppingListToLocalStorage();
+                    renderShoppingList();
+                    
+                    // Second confirmation: add back to list (simulating "consumed" and re-adding)
+                    if (confirm(`"${removedItem.name}" removed. Do you want to add it to your shopping list again for next time?`)) {
+                        shoppingListItems.push({
+                            id: `readd${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                            name: removedItem.name,
+                            quantity: removedItem.quantity,
+                            unit: removedItem.unit,
+                            source: 'Recurring Item', // Indicate it's a re-added item
+                            bought: false
+                        });
+                        saveShoppingListToLocalStorage();
+                        renderShoppingList();
+                        alert(`"${removedItem.name}" has been re-added to your list.`);
+                    } else {
+                        alert(`"${removedItem.name}" removed.`);
+                    }
+                }
+            } else {
+                alert('Item not found in shopping list.');
+            }
+        }
+
+        // --- Auto-add Missing Ingredients (for Shopping List) ---
+        function checkIngredientAvailabilityForShoppingList(recipeIngredients, currentInventory) {
+            let missingIngredients = [];
+
+            recipeIngredients.forEach(recIng => {
+                const foundInInventory = currentInventory.some(invItem =>
+                    invItem.name.toLowerCase().includes(recIng.name.toLowerCase()) ||
+                    recIng.name.toLowerCase().includes(invItem.name.toLowerCase())
+                );
+
+                if (!foundInInventory) {
+                    const alreadyOnList = shoppingListItems.some(shopItem =>
+                        shopItem.name.toLowerCase().includes(recIng.name.toLowerCase()) && !shopItem.bought
+                    );
+                    if (!alreadyOnList) {
+                        missingIngredients.push({
+                            name: recIng.name,
+                            quantity: recIng.quantity || 1,
+                            unit: recIng.unit || 'pcs',
+                            source: 'From Recipe Suggestion'
+                        });
+                    }
+                }
+            });
+            return missingIngredients;
+        }
+
+        function addMissingIngredientsToShoppingList() {
+            showLoadingOverlay('Checking recipes and inventory...');
+            let newItemsAddedCount = 0;
+
+            sampleRecipesForShoppingList.forEach(recipe => { // Use sampleRecipesForShoppingList
+                const missing = checkIngredientAvailabilityForShoppingList(recipe.ingredients, sampleInventoryForShoppingList); // Use sampleInventoryForShoppingList
+                missing.forEach(item => {
+                    shoppingListItems.push({
+                        id: `autoadd${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                        name: item.name,
+                        quantity: item.quantity,
+                        unit: item.unit,
+                        source: item.source,
+                        bought: false
+                    });
+                    newItemsAddedCount++;
+                });
+            });
+
+            saveShoppingListToLocalStorage();
+            renderShoppingList();
+            hideLoadingOverlay();
+            if (newItemsAddedCount > 0) {
+                alert(`${newItemsAddedCount} missing ingredients added to your shopping list!`);
+            } else {
+                alert('No new missing ingredients found from sample recipes. Your inventory is well-stocked!');
+            }
+        }
+
+        // --- Food Consumed Summary Card Update ---
+        function updateFoodConsumedSummary() {
+            const filterPeriod = document.getElementById('consumed-period-filter').value;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // Normalize to start of day
+
+            let filteredConsumed = [];
+
+            if (filterPeriod === 'Daily') {
+                filteredConsumed = consumedItems.filter(item => {
+                    const consumedDate = new Date(item.dateConsumed);
+                    consumedDate.setHours(0, 0, 0, 0);
+                    return consumedDate.getTime() === today.getTime();
+                });
+            } else if (filterPeriod === 'Weekly') {
+                const startOfWeek = new Date(today);
+                startOfWeek.setDate(today.getDate() - today.getDay()); // Sunday as start of week
+                startOfWeek.setHours(0, 0, 0, 0);
+
+                const endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(startOfWeek.getDate() + 7);
+                endOfWeek.setHours(0, 0, 0, 0);
+
+                filteredConsumed = consumedItems.filter(item => {
+                    const consumedDate = new Date(item.dateConsumed);
+                    consumedDate.setHours(0, 0, 0, 0);
+                    return consumedDate >= startOfWeek && consumedDate < endOfWeek;
+                });
+            } else if (filterPeriod === 'Monthly') {
+                const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                startOfMonth.setHours(0, 0, 0, 0);
+
+                const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0); // Last day of current month
+                endOfMonth.setHours(23, 59, 59, 999); // End of day
+
+                filteredConsumed = consumedItems.filter(item => {
+                    const consumedDate = new Date(item.dateConsumed);
+                    consumedDate.setHours(0, 0, 0, 0);
+                    return consumedDate >= startOfMonth && consumedDate <= endOfMonth;
+                });
+            }
+
+            let totalConsumedItemsCount = filteredConsumed.length;
+
+            const periodText = filterPeriod.toLowerCase();
+            document.getElementById('consumed-amount-display').textContent = `${totalConsumedItemsCount} items consumed this ${periodText}`;
+            document.getElementById('consumed-period-display').textContent = filterPeriod;
+
+            // Update progress bar (mock value for now, assuming a max of 20 items for visual)
+            const progressBar = document.querySelector('.bg-green-500');
+            const progressPercentage = Math.min((totalConsumedItemsCount / 20) * 100, 100);
+            progressBar.style.width = `${progressPercentage}%`;
+        }
+
+
+        // --- Filter Modal (General) ---
+        function showFilterModal() {
+            // This function is now just a placeholder as openModal handles the actual display
+        }
+
+        // --- Loading Overlay Functions ---
+        function showLoadingOverlay(message = 'Loading...') {
+            document.getElementById('loading-message').textContent = message;
+            document.getElementById('loading-overlay').style.display = 'flex';
+        }
+
+        function hideLoadingOverlay() {
+            document.getElementById('loading-overlay').style.display = 'none';
+        }
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFavoritesFromLocalStorage(); // Load favorites first
+            loadShoppingListFromLocalStorage(); // Load shopping list items
+            loadConsumedItemsFromLocalStorage(); // Load consumed items
+            inventoryItems = [...initialInventory]; // Initialize main inventory
+            showScreen('home-screen'); // Start on the home screen, which will trigger initial render of consumed food
+        });
+    </script>
+</body>
+</html>
